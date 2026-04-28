@@ -1,5 +1,6 @@
 {
-  "name": "",
+  "name": "VoltMetric Pro",
   "description": "",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

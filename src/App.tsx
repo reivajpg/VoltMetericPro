@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 // --- Types ---
-type Screen = 'dashboard' | 'power' | 'voltage_drop' | 'protections';
+type Screen = 'dashboard' | 'power' | 'voltage_drop' | 'protections' | 'tubing';
 type Phase = 'mono' | 'tri';
 type CalcMode = 'power' | 'current';
 type Material = 'cu' | 'al';
@@ -48,6 +48,7 @@ export default function App() {
           {currentScreen === 'power' && <PowerCalculatorScreen />}
           {currentScreen === 'voltage_drop' && <VoltageDropScreen />}
           {currentScreen === 'protections' && <ProtectionsScreen />}
+          {currentScreen === 'tubing' && <TubingScreen />}
         </main>
       </div>
 
@@ -96,6 +97,7 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'power', icon: Calculator, label: 'Power Calc' },
     { id: 'voltage_drop', icon: Cpu, label: 'Voltage Drop' },
+    { id: 'tubing', icon: BookOpen, label: 'Tubos' },
     { id: 'protections', icon: Shield, label: 'Protecciones' },
   ];
 
@@ -259,7 +261,7 @@ function DashboardScreen({ onNavigate, onShowToast }: { onNavigate: (s: Screen) 
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <QuickLink icon={BookOpen} label="REBT PDF" onClick={() => onShowToast('Visor PDF del REBT próximamente')} />
+        <QuickLink icon={BookOpen} label="Tubos" onClick={() => onNavigate('tubing')} />
         <QuickLink icon={History} label="Historial" onClick={() => onShowToast('Historial de proyectos próximamente')} />
         <QuickLink icon={FileText} label="Plantillas" onClick={() => onShowToast('Gestor de plantillas próximamente')} />
         <QuickLink icon={RefreshCw} label="Sincronizar" onClick={() => onShowToast('Sincronización en la nube próximamente')} />
@@ -322,26 +324,40 @@ function PowerCalculatorScreen() {
   const [power, setPower] = useState('5.89');
   const [pf, setPf] = useState('0.85');
 
-  // Basic calculation logic for display
-  const v = parseFloat(voltage) || 0;
-  const i = parseFloat(current) || 0;
-  const p_kw = parseFloat(power) || 0;
-  const cosPhi = parseFloat(pf) || 1;
+  const [results, setResults] = useState<{
+    activePower: number;
+    reactivePower: number;
+    apparentPower: number;
+    calculatedCurrent: number;
+  } | null>(null);
 
-  let activePower = 0;
-  let reactivePower = 0;
-  let apparentPower = 0;
-  let calculatedCurrent = 0;
+  useEffect(() => {
+    setResults(null);
+  }, [mode, phase]);
 
-  if (mode === 'power') {
-    const factor = phase === 'tri' ? Math.sqrt(3) : 1;
-    activePower = (factor * v * i * cosPhi) / 1000;
-    apparentPower = (factor * v * i) / 1000;
-    reactivePower = Math.sqrt(Math.max(0, apparentPower**2 - activePower**2));
-  } else {
-    const factor = phase === 'tri' ? Math.sqrt(3) : 1;
-    calculatedCurrent = (p_kw * 1000) / (factor * v * cosPhi);
-  }
+  const handleCalculate = () => {
+    const v = parseFloat(voltage) || 0;
+    const i = parseFloat(current) || 0;
+    const p_kw = parseFloat(power) || 0;
+    const cosPhi = parseFloat(pf) || 1;
+
+    let activePower = 0;
+    let reactivePower = 0;
+    let apparentPower = 0;
+    let calculatedCurrent = 0;
+
+    if (mode === 'power') {
+      const factor = phase === 'tri' ? Math.sqrt(3) : 1;
+      activePower = (factor * v * i * cosPhi) / 1000;
+      apparentPower = (factor * v * i) / 1000;
+      reactivePower = Math.sqrt(Math.max(0, apparentPower**2 - activePower**2));
+    } else {
+      const factor = phase === 'tri' ? Math.sqrt(3) : 1;
+      calculatedCurrent = (p_kw * 1000) / (factor * v * cosPhi);
+    }
+
+    setResults({ activePower, reactivePower, apparentPower, calculatedCurrent });
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 md:py-8">
@@ -417,7 +433,10 @@ function PowerCalculatorScreen() {
               max="1"
             />
 
-            <button className="w-full mt-4 bg-gradient-to-br from-primary to-primary-container text-white py-4 rounded-lg font-headline font-extrabold tracking-wide active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md">
+            <button 
+              onClick={handleCalculate}
+              className="w-full mt-4 bg-gradient-to-br from-primary to-primary-container text-white py-4 rounded-lg font-headline font-extrabold tracking-wide active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer hover:shadow-lg"
+            >
               <Calculator size={20} />
               {mode === 'power' ? `CALCULAR (${phase === 'tri' ? '√3' : 'P'})` : 'HALLAR INTENSIDAD (A)'}
             </button>
@@ -430,12 +449,17 @@ function PowerCalculatorScreen() {
             {mode === 'power' ? `Resultados de Cálculo (${phase === 'tri' ? 'Trifásico' : 'Monofásico'})` : 'Resultado del Cálculo Inverso'}
           </h3>
           
-          {mode === 'power' ? (
+          {!results ? (
+            <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center h-48 md:h-64 shadow-sm">
+              <Calculator size={48} className="text-secondary/30 mb-4" />
+              <p className="text-on-surface-variant font-medium">Presiona el botón "Calcular" para ver los resultados.</p>
+            </div>
+          ) : mode === 'power' ? (
             <div className="grid grid-cols-1 gap-4">
               <div className="bg-surface-container-low border-l-4 border-tertiary-fixed-dim rounded-xl p-6 flex justify-between items-center group hover:bg-surface-container transition-colors shadow-sm">
                 <div>
                   <p className="text-[0.7rem] font-bold text-on-tertiary-fixed-variant uppercase tracking-widest mb-1">Potencia Activa {phase === 'tri' ? 'Total' : ''}</p>
-                  <h4 className="text-4xl font-headline font-black text-on-surface tracking-tighter">{activePower.toFixed(2)} <span className="text-base font-bold text-on-surface-variant">kW</span></h4>
+                  <h4 className="text-4xl font-headline font-black text-on-surface tracking-tighter">{results.activePower.toFixed(2)} <span className="text-base font-bold text-on-surface-variant">kW</span></h4>
                 </div>
                 <div className="bg-tertiary-fixed-dim/20 p-4 rounded-full text-tertiary-container">
                   <Zap size={32} fill="currentColor" />
@@ -443,15 +467,15 @@ function PowerCalculatorScreen() {
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <ResultCard label="Potencia Reactiva" value={reactivePower.toFixed(2)} unit="kVAR" />
-                <ResultCard label="Potencia Aparente" value={apparentPower.toFixed(2)} unit="kVA" />
+                <ResultCard label="Potencia Reactiva" value={results.reactivePower.toFixed(2)} unit="kVAR" />
+                <ResultCard label="Potencia Aparente" value={results.apparentPower.toFixed(2)} unit="kVA" />
               </div>
             </div>
           ) : (
             <div className="bg-surface-container-low border-l-4 border-secondary-container rounded-xl p-6 flex justify-between items-center group hover:bg-surface-container transition-colors shadow-sm">
               <div>
                 <p className="text-[0.7rem] font-bold text-on-secondary-fixed-variant uppercase tracking-widest mb-1">Corriente por Fase</p>
-                <h4 className="text-4xl font-headline font-black text-on-surface tracking-tighter">{calculatedCurrent.toFixed(2)} <span className="text-base font-bold text-on-surface-variant">Amps</span></h4>
+                <h4 className="text-4xl font-headline font-black text-on-surface tracking-tighter">{results.calculatedCurrent.toFixed(2)} <span className="text-base font-bold text-on-surface-variant">Amps</span></h4>
               </div>
               <div className="bg-secondary-container/20 p-4 rounded-full text-secondary">
                 <Zap size={32} fill="currentColor" />
@@ -858,6 +882,109 @@ function ProtectionsScreen() {
             </div>
           </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+// --- Tubing Screen ---
+
+function TubingScreen() {
+  const [section, setSection] = useState('1.5');
+  const [conductors, setConductors] = useState('3');
+
+  const sections = ['1.5', '2.5', '4', '6', '10', '16', '25', '35', '50'];
+  
+  // Basic calculation mapping (simplified standard values for illustrative purposes based on ITC-BT-21)
+  const getTubeDiameter = (sec: string, conds: string) => {
+    const s = parseFloat(sec);
+    const c = parseInt(conds);
+    if (s <= 1.5) return c <= 3 ? 16 : 20;
+    if (s <= 2.5) return c <= 3 ? 16 : 20;
+    if (s <= 4) return c <= 3 ? 20 : 25;
+    if (s <= 6) return c <= 3 ? 20 : 25;
+    if (s <= 10) return c <= 3 ? 25 : 32;
+    if (s <= 16) return c <= 3 ? 25 : 32;
+    if (s <= 25) return c <= 3 ? 32 : 40;
+    if (s <= 35) return c <= 3 ? 40 : 50;
+    return c <= 3 ? 50 : 63;
+  };
+
+  const diameter = getTubeDiameter(section, conductors);
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-6 md:py-8">
+      <div className="mb-8">
+        <div className="flex items-center gap-2 text-on-surface-variant text-sm mb-2">
+          <span className="font-medium">Calculadoras</span>
+          <span className="text-xs">/</span>
+          <span className="font-bold text-primary">Canalizaciones</span>
+        </div>
+        <h2 className="font-headline text-3xl font-extrabold tracking-tight text-primary">Diámetro de Tubos</h2>
+        <p className="text-on-surface-variant max-w-2xl mt-2 text-base">Cálculo del diámetro exterior mínimo según ITC-BT-21 para tubos en derivaciones y circuitos.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        <section className="space-y-6">
+          <div className="bg-surface-container-lowest rounded-xl p-8 shadow-sm border border-outline-variant/15 space-y-6">
+            
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Sección del Conductor</label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {sections.map(val => (
+                  <button 
+                    key={val}
+                    onClick={() => setSection(val)}
+                    className={`h-12 flex items-center justify-center rounded font-bold transition-all border ${
+                      section === val 
+                        ? 'bg-primary text-white border-primary shadow-md scale-105' 
+                        : 'border-outline-variant text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5'
+                    }`}
+                  >
+                    {val} mm²
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Número de Conductores</label>
+              <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-2 rounded-xl">
+                {['2', '3', '4', '5'].map(c => (
+                  <button 
+                    key={c}
+                    onClick={() => setConductors(c)} 
+                    className={`py-3 rounded-lg text-lg font-black transition-all ${conductors === c ? 'bg-primary text-white shadow-md' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -z-0"></div>
+            
+            <h3 className="text-sm font-bold text-on-surface-variant uppercase tracking-widest mb-2 relative z-10">Tubo Recomendado</h3>
+            <div className="relative z-10 flex flex-col items-center justify-center my-6">
+              <div className="w-40 h-40 rounded-full border-8 border-primary flex items-center justify-center bg-white shadow-inner relative">
+                <div className="absolute inset-0 rounded-full border border-primary/20 m-2"></div>
+                <div className="text-center">
+                  <span className="text-5xl font-black text-primary tracking-tighter">Ø{diameter}</span>
+                  <span className="block text-sm font-bold text-on-surface-variant mt-1">mm</span>
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-sm text-on-surface-variant font-medium mt-4 relative z-10">
+              Diámetro exterior mínimo para {conductors} conductores de {section} mm².
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   );
