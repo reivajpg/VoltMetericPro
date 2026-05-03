@@ -18,12 +18,13 @@ import {
   List,
   Eye,
   Gauge,
-  ChevronDown
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
-type Screen = 'dashboard' | 'power' | 'voltage_drop' | 'protections' | 'tubing' | 'installation' | 'advanced_circuit';
+type Screen = 'dashboard' | 'power' | 'voltage_drop' | 'protections' | 'canalizacion' | 'installation' | 'advanced_circuit' | 'docs';
 type Phase = 'mono' | 'tri';
 type CalcMode = 'power' | 'current';
 type Material = 'cu' | 'al';
@@ -50,7 +51,8 @@ export default function App() {
           {currentScreen === 'power' && <PowerCalculatorScreen />}
           {currentScreen === 'voltage_drop' && <VoltageDropScreen />}
           {currentScreen === 'protections' && <ProtectionsScreen />}
-          {currentScreen === 'tubing' && <TubingScreen />}
+          {currentScreen === 'canalizacion' && <CanalizacionScreen />}
+          {currentScreen === 'docs' && <DocsScreen />}
           {currentScreen === 'installation' && <InstallationScreen />}
           {currentScreen === 'advanced_circuit' && <AdvancedCircuitScreen />}
         </main>
@@ -115,12 +117,13 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
       subItems: [
         { id: 'power', icon: Zap, label: 'Potencia' },
         { id: 'voltage_drop', icon: Cpu, label: 'Caída de Tensión' },
-        { id: 'tubing', icon: BookOpen, label: 'Tubos' },
+        { id: 'canalizacion', icon: Layers, label: 'Canalización' },
         { id: 'protections', icon: Shield, label: 'Protecciones' },
         { id: 'installation', icon: Gauge, label: 'Aislamiento' },
-        { id: 'advanced_circuit', icon: Calculator, label: 'Circuito Completo' },
+        { id: 'advanced_circuit', icon: Calculator, label: 'Circuito Completo' }
       ]
     },
+    { id: 'docs', icon: BookOpen, label: 'Documentación', type: 'item' as const }
   ];
 
   return (
@@ -221,9 +224,10 @@ function BottomNav({ currentScreen, setCurrentScreen }: { currentScreen: Screen,
     { id: 'advanced_circuit', icon: Calculator, label: 'Línea BT' },
     { id: 'power', icon: Zap, label: 'Calculadoras' },
     { id: 'voltage_drop', icon: Cpu, label: 'Caída de T.' },
-    { id: 'tubing', icon: BookOpen, label: 'Tubos' },
+    { id: 'canalizacion', icon: Layers, label: 'Canalización' },
     { id: 'protections', icon: Shield, label: 'Protecciones' },
     { id: 'installation', icon: Gauge, label: 'Aislamiento' },
+    { id: 'docs', icon: BookOpen, label: 'Docs' }
   ];
 
   return (
@@ -346,7 +350,7 @@ function DashboardScreen({ onNavigate, onShowToast }: { onNavigate: (s: Screen) 
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <QuickLink icon={BookOpen} label="Tubos" onClick={() => onNavigate('tubing')} />
+        <QuickLink icon={Layers} label="Canalización" onClick={() => onNavigate('canalizacion')} />
         <QuickLink icon={History} label="Historial" onClick={() => onShowToast('Historial de proyectos próximamente')} />
         <QuickLink icon={FileText} label="Plantillas" onClick={() => onShowToast('Gestor de plantillas próximamente')} />
         <QuickLink icon={RefreshCw} label="Sincronizar" onClick={() => onShowToast('Sincronización en la nube próximamente')} />
@@ -618,6 +622,7 @@ function ResultCard({ label, value, unit }: { label: string, value: string, unit
 function VoltageDropScreen() {
   const [phase, setPhase] = useState<Phase>('mono');
   const [material, setMaterial] = useState<Material>('cu');
+  const [insulation, setInsulation] = useState<'pvc' | 'xlpe'>('pvc');
   const [power, setPower] = useState('3.5');
   const [distance, setDistance] = useState('45');
   const [section, setSection] = useState('4');
@@ -626,18 +631,27 @@ function VoltageDropScreen() {
 
   useEffect(() => {
     setShowResults(false);
-  }, [phase, material, power, distance, section]);
+  }, [phase, material, insulation, power, distance, section]);
 
-  // Simplified calculation
+  // Conductividad a máxima temperatura de servicio (Guía BT Anexo 2)
+  // PVC = 70ºC, XLPE/EPR = 90ºC
+  const getConductivity = (mat: Material, ins: 'pvc' | 'xlpe') => {
+    if (mat === 'cu') {
+      return ins === 'pvc' ? 48 : 44;
+    } else {
+      return ins === 'pvc' ? 30 : 28;
+    }
+  };
+
   const p = parseFloat(power) || 0;
   const l = parseFloat(distance) || 0;
   const s = parseFloat(section) || 1;
   const k = phase === 'mono' ? 2 : 1;
-  const rho = material === 'cu' ? 0.0179 : 0.0286;
+  const gamma = getConductivity(material, insulation);
   const v = phase === 'mono' ? 230 : 400;
 
-  // ΔU = K * rho * L * P(W) / (S * V)
-  const deltaU_volts = (k * rho * l * (p * 1000)) / (s * v);
+  // Fórmula Guía Técnica REBT Anexo 2: e = K * P * L / (γ * S * U)
+  const deltaU_volts = (k * (p * 1000) * l) / (gamma * s * v);
   const deltaU_percent = (deltaU_volts / v) * 100;
 
   const sections = ['1.5', '2.5', '4', '6', '10', '16', '25', '35'];
@@ -651,7 +665,7 @@ function VoltageDropScreen() {
           <span className="font-bold text-primary">Caída de Tensión</span>
         </div>
         <h2 className="font-headline text-2xl md:text-3xl font-extrabold tracking-tight text-primary">Cálculo de Caída de Tensión</h2>
-        <p className="text-on-surface-variant max-w-2xl mt-2 text-sm md:text-base">Dimensionamiento técnico según normativa REBT para instalaciones de baja tensión.</p>
+        <p className="text-on-surface-variant max-w-2xl mt-2 text-sm md:text-base">Dimensionamiento técnico basado en la conductividad a temperatura máxima de servicio (Guía Técnica REBT Anexo 2).</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start">
@@ -679,6 +693,18 @@ function VoltageDropScreen() {
                     <button onClick={() => setMaterial('al')} className={`py-2 rounded text-sm font-bold transition-colors border ${material === 'al' ? 'bg-surface-container-lowest text-primary border-primary/20 shadow-sm' : 'border-transparent text-on-surface-variant hover:bg-surface-container-high'}`}>Aluminio</button>
                   </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Tipo de Aislamiento</label>
+                  <div className="grid grid-cols-2 gap-2 bg-surface-container-low p-1 rounded-lg">
+                    <button onClick={() => setInsulation('pvc')} className={`py-2 rounded text-sm font-bold transition-colors border ${insulation === 'pvc' ? 'bg-surface-container-lowest text-primary border-primary/20 shadow-sm' : 'border-transparent text-on-surface-variant hover:bg-surface-container-high'}`}>PVC (70ºC)</button>
+                    <button onClick={() => setInsulation('xlpe')} className={`py-2 rounded text-sm font-bold transition-colors border ${insulation === 'xlpe' ? 'bg-surface-container-lowest text-primary border-primary/20 shadow-sm' : 'border-transparent text-on-surface-variant hover:bg-surface-container-high'}`}>XLPE/EPR (90ºC)</button>
+                  </div>
+                </div>
+                {/* Spacer for alignment */}
+                <div className="hidden sm:block"></div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -721,8 +747,8 @@ function VoltageDropScreen() {
                 <Info size={20} />
               </div>
               <div>
-                <h4 className="font-bold text-sm mb-1 text-on-surface">Cálculo {phase === 'mono' ? 'Monofásico' : 'Trifásico'}</h4>
-                <p className="text-xs text-on-surface-variant leading-relaxed">Considera retorno por neutro. Fórmula: ΔU = {k} · L · P / (κ · S · U)</p>
+                <h4 className="font-bold text-sm mb-1 text-on-surface">Cálculo {phase === 'mono' ? 'Monofásico' : 'Trifásico'} (Guía Anexo 2)</h4>
+                <p className="text-xs text-on-surface-variant leading-relaxed">Considera retorno por neutro. Fórmula: e = {k} · P · L / (γ · S · U)</p>
               </div>
             </div>
             <div className="bg-surface-container rounded-xl p-5 border border-outline-variant/15 flex gap-4 items-start">
@@ -829,8 +855,8 @@ function VoltageDropScreen() {
                 <table className="w-full text-xs">
                   <tbody>
                     <tr className="border-b border-outline-variant/10">
-                      <td className="p-4 font-semibold text-on-surface-variant">Resistividad (ρ)</td>
-                      <td className="p-4 text-right font-bold text-on-surface">{rho} Ω·mm²/m</td>
+                      <td className="p-4 font-semibold text-on-surface-variant">Conductividad (γ)</td>
+                      <td className="p-4 text-right font-bold text-on-surface">{gamma} m/(Ω·mm²)</td>
                     </tr>
                     <tr className="bg-surface-container-low border-b border-outline-variant/10">
                       <td className="p-4 font-semibold text-on-surface-variant">Intensidad (Ib)</td>
@@ -1014,7 +1040,53 @@ function ProtectionsScreen() {
 
 // --- Tubing Screen ---
 
-function TubingScreen() {
+function CanalizacionScreen() {
+  const [activeTab, setActiveTab] = useState<'tubos' | 'bandejas'>('tubos');
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <header className="mb-8">
+        <h2 className="text-3xl font-headline font-black text-on-surface tracking-tight">Canalización</h2>
+        <p className="text-on-surface-variant mt-2 font-medium">Dimensionado de tubos y bandejas de acuerdo con el REBT.</p>
+      </header>
+
+      <div className="flex bg-surface-container p-1 rounded-xl shadow-inner border border-outline-variant/30 mb-6 max-w-sm">
+        <button 
+          onClick={() => setActiveTab('tubos')} 
+          className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider rounded-lg transition-all ${activeTab === 'tubos' ? 'bg-primary text-white shadow-md' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'}`}
+        >
+          Tubos
+        </button>
+        <button 
+          onClick={() => setActiveTab('bandejas')} 
+          className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider rounded-lg transition-all ${activeTab === 'bandejas' ? 'bg-primary text-white shadow-md' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'}`}
+        >
+          Bandejas
+        </button>
+      </div>
+
+      <div className="relative">
+        <AnimatePresence mode="wait">
+          {activeTab === 'tubos' ? (
+            <motion.div key="tubos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <TubingCalculator />
+            </motion.div>
+          ) : (
+            <motion.div key="bandejas" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center shadow-sm min-h-[300px]">
+                <Layers size={48} className="text-secondary/30 mb-4" />
+                <h3 className="font-headline font-bold text-lg mb-2">Cálculo de Bandejas Próximamente</h3>
+                <p className="text-on-surface-variant text-sm max-w-md mx-auto">Dimensionamiento de bandejas portacables y canales protectoras según REBT.</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function TubingCalculator() {
   const [section, setSection] = useState('1.5');
   const [conductors, setConductors] = useState('3');
   const [installMethod, setInstallMethod] = useState<'surface' | 'flush'>('surface');
@@ -1059,17 +1131,7 @@ function TubingScreen() {
   const diameter = getTubeDiameter(section, conductors, installMethod);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
-      <div className="mb-8">
-        <div className="flex items-center gap-2 text-on-surface-variant text-sm mb-2">
-          <span className="font-medium">Calculadoras</span>
-          <span className="text-xs">/</span>
-          <span className="font-bold text-primary">Canalizaciones</span>
-        </div>
-        <h2 className="font-headline text-3xl font-extrabold tracking-tight text-primary">Diámetro de Tubos</h2>
-        <p className="text-on-surface-variant max-w-2xl mt-2 text-base">Cálculo del diámetro exterior mínimo según ITC-BT-21 para tubos en derivaciones y circuitos.</p>
-      </div>
-
+    <div className="px-1 py-2 md:py-4">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start">
         <section className="lg:col-span-7 space-y-6">
           <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-sm border border-outline-variant/15 flex flex-col">
@@ -2101,6 +2163,108 @@ function AdvancedCircuitScreen() {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Docs Screen ---
+function DocsScreen() {
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <header className="mb-8">
+        <h2 className="text-3xl font-headline font-black text-on-surface tracking-tight">Documentación</h2>
+        <p className="text-on-surface-variant mt-2 font-medium">Normativas, manuales y recursos de referencia para cálculos eléctricos.</p>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* REBT Card */}
+        <a 
+          href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
+        >
+          <div className="bg-primary/10 w-12 h-12 rounded-lg flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
+            <BookOpen size={24} />
+          </div>
+          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+            REBT (R.D. 842/2002)
+          </h3>
+          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+            Reglamento Electrotécnico para Baja Tensión (ITC-BT). Enlace a la Legislación Consolidada del BOE para asegurar la versión más reciente.
+          </p>
+          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+            <span>Ver texto consolidado</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </div>
+        </a>
+
+        {/* Guia Tecnica Card */}
+        <a 
+          href="https://industria.gob.es/Calidad-Industrial/seguridadindustrial/instalacioneselectricas/bajatension/Paginas/guia-tecnica-baja-tension.aspx" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
+        >
+          <div className="bg-tertiary/10 w-12 h-12 rounded-lg flex items-center justify-center text-tertiary mb-4 group-hover:scale-110 transition-transform">
+            <FileText size={24} />
+          </div>
+          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+            Guía Técnica de Aplicación
+          </h3>
+          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+            Documento del Ministerio con aclaraciones del REBT. Se enlaza al repositorio oficial sujeto a revisiones periódicas.
+          </p>
+          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+            <span>Ver guías y revisiones</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </div>
+        </a>
+
+        {/* Guia Caida de Tension Card */}
+        <a 
+          href="https://industria.gob.es/Calidad-Industrial/seguridadindustrial/instalacionesindustriales/baja-tension/Documents/bt/guia_bt_anexo_2_sep03R1.pdf" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
+        >
+          <div className="bg-secondary/10 w-12 h-12 rounded-lg flex items-center justify-center text-secondary mb-4 group-hover:scale-110 transition-transform">
+            <Calculator size={24} />
+          </div>
+          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+            Cálculo de Caídas de Tensión
+          </h3>
+          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+            Anexo 2 de la Guía Técnica con directrices y tablas para los cálculos de caída de tensión. Puede requerir verificar actualizaciones.
+          </p>
+          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+            <span>Ver documento (PDF)</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </div>
+        </a>
+
+        {/* UNE HD 60364 Card */}
+        <a 
+          href="https://www.une.org/encuentra-tu-norma" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
+        >
+          <div className="bg-surface-container-highest w-12 h-12 rounded-lg flex items-center justify-center text-on-surface mb-4 group-hover:scale-110 transition-transform">
+            <Info size={24} />
+          </div>
+          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+            Normas UNE (Referencia)
+          </h3>
+          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+            Estándares internacionales armonizados (e.g., UNE-HD 60364-5-52) para dimensionamiento. Enlace al buscador oficial para encontrar las últimas ediciones.
+          </p>
+          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+            <span>Buscar en UNE</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </div>
+        </a>
       </div>
     </div>
   );
