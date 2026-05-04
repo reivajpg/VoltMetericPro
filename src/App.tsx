@@ -1469,7 +1469,6 @@ function AdvancedCircuitScreen() {
   const [profundidad, setProfundidad] = useState('---');
   const [resistividadTermica, setResistividadTermica] = useState('---');
   const [icc, setIcc] = useState('');
-  const [duracionIcc, setDuracionIcc] = useState('0.1');
 
   // Calculation Options
   const [tipoCalculo, setTipoCalculo] = useState<'potencia' | 'intensidad'>('potencia');
@@ -1679,22 +1678,6 @@ function AdvancedCircuitScreen() {
                 <h4 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-outline-variant/20 pb-2 text-on-surface-variant">Cortocircuito</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
                     <InputField label="Cortocircuito kA" value={icc} onChange={setIcc} unit="kA" />
-                    <div className="space-y-1.5">
-                      <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">Duración Icc</label>
-                      <div className="relative">
-                        <select 
-                          className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-pointer"
-                          value={duracionIcc}
-                          onChange={(e) => setDuracionIcc(e.target.value)}
-                        >
-                          <option value="0.1">0.1</option>
-                          <option value="0.5">0.5</option>
-                          <option value="1.0">1.0</option>
-                        </select>
-                        <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">s</span>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                      </div>
-                    </div>
                     <div className="flex flex-col gap-3 text-sm font-medium pb-2 border-l border-outline-variant/20 pl-4">
                         <label className="flex items-center gap-2 cursor-pointer text-on-surface">
                           <input 
