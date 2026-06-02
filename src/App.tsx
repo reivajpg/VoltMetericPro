@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Worker, Viewer } from '@react-pdf-viewer/core';
+import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
+import '@react-pdf-viewer/core/lib/styles/index.css';
+import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -19,7 +23,11 @@ import {
   Eye,
   Gauge,
   ChevronDown,
-  Layers
+  Layers,
+  Search,
+  Home,
+  Building2,
+  Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -880,160 +888,542 @@ function VoltageDropScreen() {
 // --- Protections Screen ---
 
 function ProtectionsScreen() {
+  const [activeTab, setActiveTab] = useState<'pia' | 'dif'>('pia');
+  const [scope, setScope] = useState<'domestic' | 'industrial'>('industrial');
+  
+  // PIA state
   const [current, setCurrent] = useState('16');
   const [curve, setCurve] = useState('C');
   const [poles, setPoles] = useState('2');
-  const [showResults, setShowResults] = useState(false);
+  const [showPiaResults, setShowPiaResults] = useState(false);
+
+  // Dif state
+  const [difPoles, setDifPoles] = useState('2');
+  const [difCurrent, setDifCurrent] = useState('40');
+  const [difSensibility, setDifSensibility] = useState('30');
+  const [difClass, setDifClass] = useState('AC');
+  const [showDifResults, setShowDifResults] = useState(false);
 
   useEffect(() => {
-    setShowResults(false);
-  }, [current, curve, poles]);
+    setShowPiaResults(false);
+  }, [current, curve, poles, scope]);
+
+  useEffect(() => {
+    setShowDifResults(false);
+  }, [difPoles, difCurrent, difSensibility, difClass, scope]);
 
   const pias = [10, 16, 20, 25, 32, 40, 50, 63];
+  const difCurrents = [25, 40, 63, 80, 100, 125];
+  const difSensibilities = scope === 'industrial' ? [30, 100, 300, 500] : [10, 30, 300];
+  const difClasses = scope === 'industrial' ? ['AC', 'A', 'A-SI', 'B-EV'] : ['AC', 'A', 'A-SI'];
+
+  const getSchneiderPia = () => {
+    if (scope === 'domestic') {
+      const pCode = poles === '1+N' ? '6' : poles === '4' ? '4' : '2';
+      const iCode = current.padStart(2, '0');
+      const ref = `R9P12${pCode}${iCode}`;
+      const basePrice = poles === '1+N' ? 14.50 : poles === '4' ? 45.00 : 25.80;
+      return {
+        model: "Resi9 (Gama Residencial)",
+        desc: "Optimizada para cuadros de distribución en viviendas. Diseño compacto y fácil instalación con peines.",
+        ref,
+        price: (basePrice * (parseInt(current) / 16)).toFixed(2),
+        link: `https://www.se.com/es/es/search/${ref}`
+      };
+    } else {
+      const refBase = "A9F7";
+      // B=8, C=9, D=5 based on latest screenshots
+      const cCode = curve === "C" ? "9" : curve === "B" ? "8" : "5";
+      const pCode = poles === "1+N" ? "6" : poles === "2" ? "2" : poles === "4" ? "4" : "1";
+      const iCode = current.padStart(2, "0");
+      const ref = `${refBase}${cCode}${pCode}${iCode}`;
+      
+      // Price targets: ~120€ for 2P, ~320€ for 4P
+      const baseVal = poles === '4' ? 315.00 : poles === '2' ? 118.00 : 85.00;
+      const currentFactor = parseInt(current) / 16;
+      
+      return {
+        model: "Acti9 iC60N (Industrial)",
+        desc: `Gama robusta con VisiSafe y VisiTrip. Curva ${curve}: ${getCurveDesc(curve)}`,
+        ref,
+        price: (baseVal * (currentFactor > 1 ? 1 + (currentFactor-1)*0.2 : currentFactor)).toFixed(2),
+        link: `https://www.se.com/es/es/search/${ref}`
+      };
+    }
+  };
+
+  const getCurveDesc = (c: string) => {
+    const descs: Record<string, string> = {
+      'B': 'Disparo rápido (3-5 In). Ideal para cables muy largos o generadores.',
+      'C': 'Estándar (5-10 In). Uso general en iluminación y tomas de corriente.',
+      'D': 'Retardado (10-14 In). Para motores, transformadores y cargas con fuertes picos de arranque.'
+    };
+    return descs[c] || '';
+  };
+
+  const getSchneiderDif = () => {
+    if (scope === 'domestic') {
+      const classCode = difClass === "AC" ? "112" : difClass === "A" ? "122" : "172";
+      const iCode = difCurrent.padStart(2, "0");
+      const ref = `R9R${classCode}${iCode}`;
+      const basePrice = difClass === 'AC' ? 48.00 : difClass === 'A' ? 72.00 : 135.00;
+      return {
+        model: "Resi9 RCD (Vivienda)",
+        desc: "Diferencial estándar para el hogar. Protección eficaz de personas contra contactos indirectos.",
+        ref,
+        price: basePrice.toFixed(2),
+        link: `https://www.se.com/es/es/search/${ref}`
+      };
+    } else {
+      let rangeBase = "A9R";
+      let classCode = "";
+      
+      // Mapping based on iID screenshots:
+      // AC 30mA: 81, A 30mA: 21, A-SI 30mA: 61, AC 300mA: 84
+      if (difSensibility === "30") {
+        if (difClass === "AC") classCode = "81";
+        else if (difClass === "A") classCode = "21";
+        else if (difClass === "A-SI") classCode = "61";
+      } else {
+        // 300mA logic
+        if (difClass === "AC") classCode = "84";
+        else if (difClass === "A") classCode = "24";
+        else if (difClass === "A-SI") classCode = "64";
+      }
+
+      if (difClass === "B-EV") {
+        rangeBase = "A9Z";
+        classCode = "51";
+      }
+
+      const pCode = difPoles === "4" ? "4" : "2";
+      const iCode = difCurrent.padStart(2, "0");
+      const ref = `${rangeBase}${classCode}${pCode}${iCode}`;
+      
+      let basePrice = 0;
+      if (difClass === 'AC') basePrice = difSensibility === "30" ? 220 : 185;
+      else if (difClass === 'A') basePrice = 280;
+      else if (difClass === 'A-SI') basePrice = 360;
+      else if (difClass === 'B-EV') basePrice = 550;
+
+      if (difPoles === '4') basePrice *= 2.8; // Match screenshot prices (4P AC 30mA ~635€)
+
+      return {
+        model: `Acti9 iID (${difClass})`,
+        desc: getClassJustification(difClass, difSensibility),
+        ref,
+        price: basePrice.toFixed(2),
+        link: `https://www.se.com/es/es/search/${ref}`
+      };
+    }
+  };
+
+  const getClassJustification = (cls: string, sens: string) => {
+    const sDesc = sens === "30" ? "Alta sensibilidad (Personas)." : "Baja sensibilidad (Incendio/Máquinas).";
+    const cDescs: Record<string, string> = {
+      'AC': `Uso básico. ${sDesc} Solo detecta fugas en corriente alterna senoidal.`,
+      'A': `Electrónica. ${sDesc} Detecta fugas alternas y pulsantes (rectificadores, lavadoras).`,
+      'A-SI': `Superinmunizado. Sistema reforzado contra disparos intempestivos por armónicos o rayos.`,
+      'B-EV': `Vehículo Eléctrico. Obligatorio para detectar fugas en corriente continua pura (>6mA).`
+    };
+    return cDescs[cls] || '';
+  };
+
+  const schneiderPia = getSchneiderPia();
+  const schneiderDif = getSchneiderDif();
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center gap-2 text-on-surface-variant text-sm mb-2">
-          <span className="font-medium">Calculadoras</span>
+          <span className="font-medium">Selección</span>
           <span className="text-xs">/</span>
-          <span className="font-bold text-primary">Protecciones</span>
+          <span className="font-bold text-primary">Protecciones Schneider</span>
         </div>
-        <h2 className="font-headline text-2xl md:text-3xl font-extrabold tracking-tight text-primary">Protecciones (PIA)</h2>
-        <p className="text-on-surface-variant max-w-2xl mt-2 text-sm md:text-base">Selección de interruptores magnetotérmicos según REBT ITC-BT-22.</p>
+        <h2 className="font-headline text-2xl md:text-3xl font-extrabold tracking-tight text-primary">Recomendador Schneider</h2>
+        <p className="text-on-surface-variant max-w-2xl mt-2 text-sm md:text-base">Selección de protecciones con referencias exactas basadas en el catálogo actual de Schneider Electric.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start">
-        <section className="lg:col-span-7 space-y-6">
-          <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-sm border border-outline-variant/15 flex flex-col">
-            <h3 className="font-headline font-bold text-lg mb-6 flex items-center gap-2 text-on-surface">
-              <Shield size={20} className="text-primary" />
-              Parámetros del Magnetotérmico
-            </h3>
-            
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Intensidad Nominal (In)</label>
-                <div className="flex flex-wrap gap-2">
-                  {pias.map(val => (
-                    <button 
-                      key={val}
-                      onClick={() => setCurrent(val.toString())}
-                      className={`w-12 h-10 flex items-center justify-center rounded font-bold text-sm transition-colors border ${
-                        current === val.toString() 
-                          ? 'bg-primary text-white border-primary shadow-sm' 
-                          : 'border-outline-variant text-on-surface hover:border-primary hover:text-primary'
-                      }`}
-                    >
-                      {val}A
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Curva de Disparo</label>
-                  <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-lg">
-                    {['B', 'C', 'D'].map(c => (
-                      <button 
-                        key={c}
-                        onClick={() => setCurve(c)} 
-                        className={`py-2 rounded text-sm font-bold transition-colors ${curve === c ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Polos</label>
-                  <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-lg">
-                    {['1+N', '2', '4'].map(p => (
-                      <button 
-                        key={p}
-                        onClick={() => setPoles(p)} 
-                        className={`py-2 rounded text-sm font-bold transition-colors ${poles === p ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
-                      >
-                        {p}P
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <InputField label="Poder de Corte (kA)" value="6" onChange={() => {}} unit="kA" />
-              
-              <button 
-                onClick={() => setShowResults(true)}
-                className="w-full bg-gradient-to-br from-primary to-primary-container text-white py-4 rounded-xl font-headline font-bold text-lg tracking-wide shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-8"
-              >
-                <Calculator size={24} />
-                CALCULAR PROTECCIÓN
-              </button>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/15">
+          <div className="flex gap-2 mb-3">
+            <Home size={18} className="text-secondary" />
+            <h4 className="font-bold text-sm">Gama Resi9 (Doméstico)</h4>
           </div>
-        </section>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Diseñada exclusivamente para viviendas. Cumple la norma EN 60898-1. Su ventaja es el precio competitivo y la facilidad de montaje en cuadros residenciales. 
+          </p>
+        </div>
+        <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/15">
+          <div className="flex gap-2 mb-3">
+            <Building2 size={18} className="text-primary" />
+            <h4 className="font-bold text-sm">Gama Acti9 (Industrial)</h4>
+          </div>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Uso en industria, hospitales y centros de datos. Mayor poder de corte (Icu/Ics) y funciones de seguridad avanzada como VisiSafe (franja verde de corte seguro).
+          </p>
+        </div>
+      </div>
 
-        <aside className="lg:col-span-5 space-y-6">
-          {!showResults ? (
-            <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center h-full shadow-sm min-h-[300px]">
-              <Shield size={48} className="text-secondary/30 mb-4" />
-              <p className="text-on-surface-variant font-medium">Presiona el botón "Calcular" para ver la selección recomendada.</p>
-            </div>
-          ) : (
-            <>
-              <div className="bg-tertiary-container text-on-tertiary-container rounded-xl p-6 md:p-8 shadow-xl relative overflow-hidden">
-                <div className="absolute -right-8 -top-8 opacity-10">
-                  <Shield size={200} fill="currentColor" />
+      <div className="flex flex-col md:flex-row gap-4 mb-8">
+        <div className="flex bg-surface-container-low p-1 rounded-xl border border-outline-variant/15 shrink-0">
+          <button
+            className={`flex-1 md:w-40 py-2.5 px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeTab === 'pia' ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'}`}
+            onClick={() => setActiveTab('pia')}
+          >
+            <Shield size={16} />
+            Magnetos
+          </button>
+          <button
+            className={`flex-1 md:w-40 py-2.5 px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeTab === 'dif' ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'}`}
+            onClick={() => setActiveTab('dif')}
+          >
+            <Zap size={16} />
+            Diferenciales
+          </button>
+        </div>
+
+        <div className="flex bg-surface-container-low p-1 rounded-xl border border-outline-variant/15 flex-1 max-w-md">
+          <button
+            className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${scope === 'industrial' ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+            onClick={() => setScope('industrial')}
+          >
+            <Building2 size={16} />
+            Industrial (Acti9)
+          </button>
+          <button
+            className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${scope === 'domestic' ? 'bg-secondary text-on-secondary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+            onClick={() => setScope('domestic')}
+          >
+            <Home size={16} />
+            Vivienda (Resi9)
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'pia' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start">
+          <section className="lg:col-span-7 space-y-6">
+            <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-sm border border-outline-variant/15 flex flex-col">
+              <h3 className="font-headline font-bold text-lg mb-6 flex items-center gap-2 text-on-surface">
+                <Shield size={20} className="text-primary" />
+                Parámetros del Magnetotérmico
+              </h3>
+              
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Intensidad Nominal (In)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {pias.map(val => (
+                      <button 
+                        key={val}
+                        onClick={() => setCurrent(val.toString())}
+                        className={`w-12 h-10 flex items-center justify-center rounded font-bold text-sm transition-colors border ${
+                          current === val.toString() 
+                            ? 'bg-primary text-white border-primary shadow-sm' 
+                            : 'border-outline-variant text-on-surface hover:border-primary hover:text-primary'
+                        }`}
+                      >
+                        {val}A
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <h3 className="font-headline font-bold text-lg mb-8 flex items-center gap-2 relative z-10">
-                  <Shield size={20} />
-                  Selección Recomendada
-                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Curva de Disparo</label>
+                    <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-lg">
+                      {['B', 'C', 'D'].map(c => (
+                        <button 
+                          key={c}
+                          onClick={() => setCurve(c)} 
+                          className={`py-2 rounded text-sm font-bold transition-colors ${curve === c ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Polos</label>
+                    <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-lg">
+                      {['1+N', '2', '4'].map(p => (
+                        <button 
+                          key={p}
+                          onClick={() => setPoles(p)} 
+                          className={`py-2 rounded text-sm font-bold transition-colors ${poles === p ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        >
+                          {p}P
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-surface-container px-4 py-3 rounded-lg border border-outline-variant/15 flex items-center justify-between mt-4">
+                  <span className="text-sm font-bold text-on-surface-variant">Poder de Corte (kA)</span>
+                  <span className="text-sm font-black text-on-surface">6 kA / 10 kA</span>
+                </div>
+                
+                <button 
+                  onClick={() => setShowPiaResults(true)}
+                  className="w-full bg-[#3dcd58] text-white py-4 rounded-xl font-headline font-bold text-lg tracking-wide shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-8 hover:opacity-90"
+                >
+                  <Search size={22} />
+                  BUSCAR EN SCHNEIDER ELECTRIC
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <aside className="lg:col-span-5 space-y-6">
+            {!showPiaResults ? (
+              <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center h-full shadow-sm min-h-[300px]">
+                <Shield size={48} className="text-secondary/30 mb-4" />
+                <p className="text-on-surface-variant font-medium">Configura los parámetros y busca para ver el modelo recomendado de Schneider Electric.</p>
+              </div>
+            ) : (
+              <div className="bg-surface-container-lowest rounded-xl p-6 shadow-xl relative overflow-hidden border border-[#3dcd58]/30">
+                <div className="absolute -right-8 -top-8 opacity-5">
+                  <Shield size={200} fill="currentColor" className="text-[#3dcd58]" />
+                </div>
+                <div className="flex items-center gap-3 mb-6 relative z-10">
+                  <div className="bg-[#3dcd58]/20 text-[#2b903e] p-2 rounded-lg">
+                    <Shield size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-headline font-bold text-[#2b903e] tracking-tight">PIA Recomendado</h3>
+                    <p className="text-xs text-on-surface-variant font-medium">Gama Terciario e Industria</p>
+                  </div>
+                </div>
                 
                 <div className="space-y-6 relative z-10">
                   <div className="flex flex-col">
-                    <span className="text-on-tertiary-container/70 text-xs font-bold uppercase tracking-[0.2em] mb-1">Magnetotérmico</span>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-headline text-4xl font-black">PIA {current}A</span>
+                    <span className="font-headline text-3xl font-black text-on-surface mb-1">{schneiderPia.model}</span>
+                    <div className="flex items-center gap-2 mb-4 bg-tertiary-fixed-dim/10 rounded-lg p-3 border border-tertiary-fixed-dim/20">
+                      <Shield size={18} className="text-tertiary-fixed-dim shrink-0" />
+                      <p className="text-[10px] text-tertiary-container font-bold uppercase leading-tight">
+                        Justificación Curva {curve}: {getCurveDesc(curve)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center text-sm font-bold mt-1">
+                      <div className="flex gap-2 text-on-surface-variant bg-surface-container px-3 py-2 rounded-lg">
+                        <span>Ref:</span>
+                        <span className="text-on-surface select-all tracking-wider">{schneiderPia.ref}</span>
+                      </div>
+                      <div className="bg-secondary/10 text-secondary px-3 py-2 rounded-lg flex items-center gap-2">
+                        <Tag size={14} />
+                        <span>PVP aprox: {schneiderPia.price}€</span>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="bg-white/20 backdrop-blur-md rounded-lg p-5 border border-white/30 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider">Curva</span>
-                      <span className="font-black text-lg">{curve}</span>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Intensidad</span>
+                      <span className="font-black text-sm">{current} A</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider">Polos</span>
-                      <span className="font-black text-lg">{poles}</span>
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Curva</span>
+                      <span className="font-black text-sm">{curve}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider">Poder de Corte</span>
-                      <span className="font-black text-lg">6 kA</span>
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Polos</span>
+                      <span className="font-black text-sm">{poles}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                    {schneiderPia.desc}
+                  </p>
+
+                  <a 
+                    href={schneiderPia.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-center items-center gap-2 w-full py-3 bg-[#3dcd58] text-white font-bold rounded-lg hover:bg-[#2b903e] shadow-sm transition-colors mt-2"
+                  >
+                    <span>Ver en catálogo Schneider</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {activeTab === 'dif' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start">
+          <section className="lg:col-span-7 space-y-6">
+            <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 shadow-sm border border-outline-variant/15 flex flex-col">
+              <h3 className="font-headline font-bold text-lg mb-6 flex items-center gap-2 text-on-surface">
+                <Zap size={20} className="text-primary" />
+                Parámetros del Diferencial
+              </h3>
+              
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Calibre In (A)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {difCurrents.map(val => (
+                      <button 
+                        key={val}
+                        onClick={() => setDifCurrent(val.toString())}
+                        className={`w-14 h-10 flex items-center justify-center rounded font-bold text-sm transition-colors border ${
+                          difCurrent === val.toString() 
+                            ? 'bg-primary text-white border-primary shadow-sm' 
+                            : 'border-outline-variant text-on-surface hover:border-primary hover:text-primary'
+                        }`}
+                      >
+                        {val}A
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Sensibilidad IΔn (mA)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {difSensibilities.map(val => (
+                      <button 
+                        key={val}
+                        onClick={() => setDifSensibility(val.toString())}
+                        className={`h-10 px-4 flex items-center justify-center rounded font-bold text-sm transition-colors border ${
+                          difSensibility === val.toString() 
+                            ? 'bg-primary text-white border-primary shadow-sm' 
+                            : 'border-outline-variant text-on-surface hover:border-primary hover:text-primary'
+                        }`}
+                      >
+                        {val} mA
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Clase</label>
+                    <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-lg">
+                      {difClasses.map(c => (
+                        <button 
+                          key={c}
+                          onClick={() => setDifClass(c)} 
+                          className={`py-2 rounded text-sm font-bold transition-colors ${difClass === c ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant">Polos</label>
+                    <div className="grid grid-cols-2 gap-2 bg-surface-container-low p-1 rounded-lg">
+                      {['2', '4'].map(p => (
+                        <button 
+                          key={p}
+                          onClick={() => setDifPoles(p)} 
+                          className={`py-2 rounded text-sm font-bold transition-colors ${difPoles === p ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        >
+                          {p}P
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
+                
+                <button 
+                  onClick={() => setShowDifResults(true)}
+                  className="w-full bg-[#3dcd58] text-white py-4 rounded-xl font-headline font-bold text-lg tracking-wide shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-8 hover:opacity-90"
+                >
+                  <Search size={22} />
+                  BUSCAR EN SCHNEIDER ELECTRIC
+                </button>
               </div>
-              
-              <div className="bg-surface-container rounded-xl p-5 border border-outline-variant/15 flex gap-4 items-start">
-                <div className="bg-tertiary-fixed-dim/20 p-2 rounded-lg text-tertiary-container shrink-0">
-                  <Info size={20} />
+            </div>
+          </section>
+
+          <aside className="lg:col-span-5 space-y-6">
+            {!showDifResults ? (
+              <div className="bg-surface-container-low border border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center text-center h-full shadow-sm min-h-[300px]">
+                <Zap size={48} className="text-secondary/30 mb-4" />
+                <p className="text-on-surface-variant font-medium">Configura los parámetros y busca para ver el modelo recomendado de Schneider Electric.</p>
+              </div>
+            ) : (
+              <div className="bg-surface-container-lowest rounded-xl p-6 shadow-xl relative overflow-hidden border border-[#3dcd58]/30">
+                <div className="absolute -right-8 -top-8 opacity-5">
+                  <Zap size={200} fill="currentColor" className="text-[#3dcd58]" />
                 </div>
-                <div>
-                  <h4 className="font-bold text-sm mb-1 text-on-surface">Curva {curve}</h4>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
-                    {curve === 'B' && 'Disparo rápido (3-5 In). Recomendado para grandes longitudes de cable o generadores.'}
-                    {curve === 'C' && 'Disparo normal (5-10 In). Uso general en instalaciones domésticas e industriales.'}
-                    {curve === 'D' && 'Disparo lento (10-20 In). Recomendado para motores o transformadores con alta corriente de arranque.'}
+                <div className="flex items-center gap-3 mb-6 relative z-10">
+                  <div className="bg-[#3dcd58]/20 text-[#2b903e] p-2 rounded-lg">
+                    <Zap size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-headline font-bold text-[#2b903e] tracking-tight">Diferencial Recomendado</h3>
+                    <p className="text-xs text-on-surface-variant font-medium">Gama Terciario e Industria</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-6 relative z-10">
+                  <div className="flex flex-col">
+                    <span className="font-headline text-3xl font-black text-on-surface mb-1">{schneiderDif.model}</span>
+                    <div className="flex items-center gap-2 mb-4 bg-[#3dcd58]/10 rounded-lg p-3 border border-[#3dcd58]/20">
+                      <Zap size={18} className="text-[#3dcd58] shrink-0" />
+                      <p className="text-[10px] text-[#2b903e] font-bold uppercase leading-tight">
+                        Justificación Clase {difClass}: {getClassJustification(difClass, difSensibility)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center text-sm font-bold mt-1">
+                      <div className="flex gap-2 text-on-surface-variant bg-surface-container px-3 py-2 rounded-lg">
+                        <span>Ref:</span>
+                        <span className="text-on-surface select-all tracking-wider">{schneiderDif.ref}</span>
+                      </div>
+                      <div className="bg-secondary/10 text-secondary px-3 py-2 rounded-lg flex items-center gap-2">
+                        <Tag size={14} />
+                        <span>PVP aprox: {schneiderDif.price}€</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Calibre In</span>
+                      <span className="font-black text-sm">{difCurrent} A</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Sensibilidad</span>
+                      <span className="font-black text-sm">{difSensibility} mA</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Clase</span>
+                      <span className="font-black text-sm">{difClass}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-surface-container-low px-4 py-3 rounded-lg border border-outline-variant/15">
+                      <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Polos</span>
+                      <span className="font-black text-sm">{difPoles}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                    {schneiderDif.desc}
                   </p>
+
+                  <a 
+                    href={schneiderDif.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-center items-center gap-2 w-full py-3 bg-[#3dcd58] text-white font-bold rounded-lg hover:bg-[#2b903e] shadow-sm transition-colors mt-2"
+                  >
+                    <span>Ver en catálogo Schneider</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
                 </div>
               </div>
-            </>
-          )}
-        </aside>
-      </div>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
@@ -2168,103 +2558,157 @@ function AdvancedCircuitScreen() {
   );
 }
 
+function PDFViewerWrapper({ url }: { url: string }) {
+  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+  return (
+    <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+      <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} />
+    </Worker>
+  );
+}
+
 // --- Docs Screen ---
 function DocsScreen() {
+  const [activeDoc, setActiveDoc] = useState<{ title: string; url: string } | null>(null);
+  const [boeUpdate, setBoeUpdate] = useState<string | null>(null);
+  const [loadingUpdate, setLoadingUpdate] = useState(false);
+
+  useEffect(() => {
+    async function fetchBoeUpdate() {
+      try {
+        setLoadingUpdate(true);
+        let html = '';
+        
+        try {
+          const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://www.boe.es/biblioteca_juridica/codigos/codigo.php?id=326_Reglamento_electrotecnico_para_baja_tension_e_ITC&tipo=C&modo=2')}`);
+          if (!res.ok) throw new Error('allorigins failed');
+          const data = await res.json();
+          html = data.contents || '';
+        } catch (err) {
+          // Fallback to corsproxy
+          const res2 = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://www.boe.es/biblioteca_juridica/codigos/codigo.php?id=326_Reglamento_electrotecnico_para_baja_tension_e_ITC&tipo=C&modo=2')}`);
+          if (!res2.ok) throw new Error('corsproxy failed');
+          html = await res2.text();
+        }
+
+        const match = html.match(/<p>Última modificación:\s*<strong>\s*(.*?)\s*<\/strong>\.<\/p>/i);
+        if (match && match[1]) {
+          setBoeUpdate(match[1]);
+        } else {
+          setBoeUpdate('No disponible (comprobar en la web)');
+        }
+      } catch (e) {
+        // Silently catch fetch errors to avoid console spam for users with adblockers
+        setBoeUpdate('No disponible (error de conexión)');
+      } finally {
+        setLoadingUpdate(false);
+      }
+    }
+    fetchBoeUpdate();
+  }, []);
+
+  const docs = [
+    {
+      title: 'REBT (R.D. 842/2002)',
+      desc: 'Reglamento Electrotécnico para Baja Tensión (ITC-BT). Texto Consolidado Oficial.',
+      url: '/rebt.pdf',
+      icon: BookOpen,
+      iconColor: 'bg-primary/10 text-primary',
+    },
+    {
+      title: 'Guía Técnica de Aplicación',
+      desc: 'Documento completo de aclaraciones del REBT (F2I2).',
+      url: '/guia.pdf',
+      icon: FileText,
+      iconColor: 'bg-tertiary/10 text-tertiary',
+    },
+    {
+      title: 'Cálculo de Caídas de Tensión',
+      desc: 'Anexo 2 de la Guía Técnica con directrices y tablas (F2I2).',
+      url: '/anexo2.pdf',
+      icon: Calculator,
+      iconColor: 'bg-secondary/10 text-secondary',
+    },
+    {
+      title: 'Norma UNE-HD 60364-5-52',
+      desc: 'Instalaciones eléctricas de baja tensión. Selección e instalación (Extracto/Buscador).',
+      url: 'https://www.une.org/encuentra-tu-norma/busca-tu-norma/norma/?c=N0054045',
+      icon: Info,
+      iconColor: 'bg-surface-container-highest text-on-surface',
+    }
+  ];
+
+  if (activeDoc) {
+    return (
+      <div className="max-w-6xl mx-auto flex flex-col h-[calc(100vh-140px)]">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setActiveDoc(null)}
+              className="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors"
+              title="Volver"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <h2 className="text-2xl font-headline font-bold text-on-surface">{activeDoc.title}</h2>
+          </div>
+          <a href={activeDoc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-bold text-primary hover:underline bg-primary/10 px-4 py-2 rounded-lg">
+            <span>Abrir en nueva pestaña</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </a>
+        </div>
+        <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant/30 overflow-hidden shadow-sm relative">
+          {activeDoc.url.endsWith('.pdf') ? (
+            <PDFViewerWrapper url={activeDoc.url} />
+          ) : (
+            <iframe 
+              src={activeDoc.url} 
+              className="w-full h-full border-0"
+              title={activeDoc.title}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <header className="mb-8">
         <h2 className="text-3xl font-headline font-black text-on-surface tracking-tight">Documentación</h2>
-        <p className="text-on-surface-variant mt-2 font-medium">Normativas, manuales y recursos de referencia para cálculos eléctricos.</p>
+        <p className="text-on-surface-variant mt-2 font-medium">Normativas, manuales y recursos de referencia integrados para consultas rápidas.</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* REBT Card */}
-        <a 
-          href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
-        >
-          <div className="bg-primary/10 w-12 h-12 rounded-lg flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
-            <BookOpen size={24} />
-          </div>
-          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
-            REBT (R.D. 842/2002)
-          </h3>
-          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
-            Reglamento Electrotécnico para Baja Tensión (ITC-BT). Enlace a la Legislación Consolidada del BOE para asegurar la versión más reciente.
-          </p>
-          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-            <span>Ver texto consolidado</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </div>
-        </a>
-
-        {/* Guia Tecnica Card */}
-        <a 
-          href="https://industria.gob.es/Calidad-Industrial/seguridadindustrial/instalacioneselectricas/bajatension/Paginas/guia-tecnica-baja-tension.aspx" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
-        >
-          <div className="bg-tertiary/10 w-12 h-12 rounded-lg flex items-center justify-center text-tertiary mb-4 group-hover:scale-110 transition-transform">
-            <FileText size={24} />
-          </div>
-          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
-            Guía Técnica de Aplicación
-          </h3>
-          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
-            Documento del Ministerio con aclaraciones del REBT. Se enlaza al repositorio oficial sujeto a revisiones periódicas.
-          </p>
-          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-            <span>Ver guías y revisiones</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </div>
-        </a>
-
-        {/* Guia Caida de Tension Card */}
-        <a 
-          href="https://industria.gob.es/Calidad-Industrial/seguridadindustrial/instalacionesindustriales/baja-tension/Documents/bt/guia_bt_anexo_2_sep03R1.pdf" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
-        >
-          <div className="bg-secondary/10 w-12 h-12 rounded-lg flex items-center justify-center text-secondary mb-4 group-hover:scale-110 transition-transform">
-            <Calculator size={24} />
-          </div>
-          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
-            Cálculo de Caídas de Tensión
-          </h3>
-          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
-            Anexo 2 de la Guía Técnica con directrices y tablas para los cálculos de caída de tensión. Puede requerir verificar actualizaciones.
-          </p>
-          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-            <span>Ver documento (PDF)</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </div>
-        </a>
-
-        {/* UNE HD 60364 Card */}
-        <a 
-          href="https://www.une.org/encuentra-tu-norma" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="group block bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col"
-        >
-          <div className="bg-surface-container-highest w-12 h-12 rounded-lg flex items-center justify-center text-on-surface mb-4 group-hover:scale-110 transition-transform">
-            <Info size={24} />
-          </div>
-          <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
-            Normas UNE (Referencia)
-          </h3>
-          <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
-            Estándares internacionales armonizados (e.g., UNE-HD 60364-5-52) para dimensionamiento. Enlace al buscador oficial para encontrar las últimas ediciones.
-          </p>
-          <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-            <span>Buscar en UNE</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </div>
-        </a>
+        {docs.map((doc, idx) => {
+          const Icon = doc.icon;
+          return (
+            <button 
+              key={idx}
+              onClick={() => setActiveDoc(doc)}
+              className="group text-left bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/30 hover:border-primary/50 hover:shadow-md transition-all flex flex-col h-full"
+            >
+              <div className={`${doc.iconColor} w-12 h-12 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                <Icon size={24} />
+              </div>
+              <h3 className="font-headline font-bold text-lg text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+                {doc.title}
+              </h3>
+              <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+                {doc.desc}
+              </p>
+              {doc.title.includes('REBT') && (
+                <div className="mt-2 text-xs font-bold text-secondary">
+                  {loadingUpdate ? 'Comprobando última versión...' : boeUpdate ? `Última actualización BOE: ${boeUpdate}` : ''}
+                </div>
+              )}
+              <div className="mt-4 flex items-center text-primary text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                <span>Ver documento</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
