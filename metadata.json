@@ -1,6 +1,8 @@
 {
   "name": "VoltMetric Pro",
-  "description": "",
+  "description": "Calculadora profesional para instalaciones eléctricas de baja tensión según el REBT de España. Incluye herramientas de dimensionamiento de cables, cálculo de caídas de tensión y visor de normativas.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
