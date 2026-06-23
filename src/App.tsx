@@ -1,8 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Viewer } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import '@react-pdf-viewer/core/lib/styles/index.css';
-import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -868,11 +864,15 @@ function VoltageDropScreen() {
                     </tr>
                     <tr className="bg-surface-container-low border-b border-outline-variant/10">
                       <td className="p-4 font-semibold text-on-surface-variant">Intensidad (Ib)</td>
-                      <td className="p-4 text-right font-bold text-on-surface">{((p * 1000) / v).toFixed(2)} A</td>
+                      <td className="p-4 text-right font-bold text-on-surface">
+                        {(phase === 'mono' ? (p * 1000) / v : (p * 1000) / (Math.sqrt(3) * v)).toFixed(2)} A
+                      </td>
                     </tr>
                     <tr className="border-b border-outline-variant/10">
                       <td className="p-4 font-semibold text-on-surface-variant">Pérdida Potencia</td>
-                      <td className="p-4 text-right font-bold text-on-surface">{(deltaU_volts * ((p * 1000) / v)).toFixed(1)} W</td>
+                      <td className="p-4 text-right font-bold text-on-surface">
+                        {(deltaU_volts * (phase === 'mono' ? (p * 1000) / v : (p * 1000) / (Math.sqrt(3) * v)) * (phase === 'mono' ? 1 : Math.sqrt(3))).toFixed(1)} W
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1843,6 +1843,7 @@ function AdvancedCircuitScreen() {
   // State for receptor tab
   const [tension, setTension] = useState('400.0');
   const [aislamiento, setAislamiento] = useState('Z1');
+  const [alimentacion, setAlimentacion] = useState('3F+N');
   const [numero, setNumero] = useState('2');
   const [potencia, setPotencia] = useState('40.0');
   const [cosPhi, setCosPhi] = useState('0.8');
@@ -1881,7 +1882,10 @@ function AdvancedCircuitScreen() {
   const num = parseFloat(numero) || 1;
   const cpf_fase = parseFloat(conductoresPorFase) || 1;
   
-  const ib = (p * 1000) / (Math.sqrt(3) * v * cpf);
+  const isMono = alimentacion === '1F+N';
+  const ib = isMono 
+    ? (p * 1000) / (v * cpf) 
+    : (p * 1000) / (Math.sqrt(3) * v * cpf);
   
   // Correction factors stub (Can be expanded later)
   let k_temp = 1.0;
@@ -1918,7 +1922,15 @@ function AdvancedCircuitScreen() {
     let ratio = (ib / izNum) * 100;
     if (ratio > 9999) ratio = 9999;
     
-    const caidaRow = (Math.sqrt(3) * (tipoConductor === 'cobre' ? 0.0179 : 0.028) * length * ib * cpf * 100) / (sNum * v);
+    // Conductivity thermally corrected according to Guía BT Anexo 2: PVC 70ºC (Cu=48, Al=30), XLPE/Z1 90ºC (Cu=44, Al=28)
+    const gammaSizing = (tipoConductor === 'cobre') 
+      ? (aislamiento === 'PVC' ? 48 : 44) 
+      : (aislamiento === 'PVC' ? 30 : 28);
+    
+    const factor_red = isMono ? 2 : Math.sqrt(3);
+    const caidaVolts = (factor_red * length * ib * cpf) / (gammaSizing * sNum * cpf_fase);
+    const caidaRow = (caidaVolts / v) * 100;
+    
     return {
       ...row,
       iz: izNum.toFixed(2),
@@ -1935,7 +1947,7 @@ function AdvancedCircuitScreen() {
     const newRecord = {
       id: circuitoId,
       metodo: metodo,
-      conductores: (calculoConductor === 'unipolar' ? '1x' : '') + (tipoConductor === 'cobre' ? 'Cu' : 'Al'),
+      conductores: (alimentacion) + ' ' + (calculoConductor === 'unipolar' ? '1x' : '') + (tipoConductor === 'cobre' ? 'Cu' : 'Al'),
       tension: tension.replace('.', ','),
       aisl: aislamiento,
       seccion: passingRow ? `${passingRow.s} mm²` : '---',
@@ -2163,8 +2175,21 @@ function AdvancedCircuitScreen() {
                 <div className="space-y-1.5">
                   <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Alimentación</label>
                   <div className="relative">
-                    <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none">
-                      <option>3F+N</option>
+                    <select 
+                      value={alimentacion}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAlimentacion(val);
+                        if (val === '1F+N') {
+                          setTension('230.0');
+                        } else {
+                          setTension('400.0');
+                        }
+                      }}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none"
+                    >
+                      <option value="3F+N">3F+N (Trifásica)</option>
+                      <option value="1F+N">1F+N (Monofásica)</option>
                     </select>
                     <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
                   </div>
@@ -2185,7 +2210,9 @@ function AdvancedCircuitScreen() {
                        V
                      </span>
                    </div>
-                   <span className="text-[10px] font-bold text-secondary-container uppercase tracking-wider px-1">TRIFÁSICA</span>
+                   <span className="text-[10px] font-bold text-secondary-container uppercase tracking-wider px-1">
+                     {alimentacion === '1F+N' ? 'MONOFÁSICA' : 'TRIFÁSICA'}
+                   </span>
                  </div>
 
                 <div className="space-y-1.5">
@@ -2559,12 +2586,93 @@ function AdvancedCircuitScreen() {
 }
 
 function PDFViewerWrapper({ url }: { url: string }) {
-  const defaultLayoutPluginInstance = defaultLayoutPlugin();
+  // Use native browser PDF embedding which is 100% robust and compatible with React 19
   return (
-    <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-      <Viewer fileUrl={url} plugins={[defaultLayoutPluginInstance]} />
-    </Worker>
+    <div className="w-full h-full flex flex-col bg-surface-container-lowest">
+      <iframe 
+        src={url} 
+        className="w-full h-full border-0 select-none flex-1"
+        title="Visualizador de PDF oficial"
+      />
+    </div>
   );
+}
+
+// --- Helper for PDF summaries ---
+function getDocSummary(title: string) {
+  if (title.includes('REBT')) {
+    return (
+      <div className="text-xs bg-surface-container-highest/50 p-4 rounded-lg space-y-3 text-on-surface-variant font-medium">
+        <p className="font-bold text-on-surface text-xs border-b border-outline-variant/20 pb-1 mb-1">Puntos Clave del REBT (R.D. 842/2002):</p>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Estructura Fundamental:</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Consta de 29 artículos doctrinales de seguridad y 51 Instrucciones Técnicas Complementarias (ITC-BT) que detallan los requisitos técnicos del diseño eléctrico en España.</p>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">ITC-BT de Consulta Frecuente:</span>
+          <ul className="mt-0.5 opacity-95 list-disc ml-4 space-y-1">
+            <li><strong className="text-on-surface font-semibold">ITC-BT-19:</strong> Instalaciones interiores (caídas de tensión máximas del 3% en alumbrado y 5% en otros usos).</li>
+            <li><strong className="text-on-surface font-semibold">ITC-BT-22:</strong> Selección de protecciones contra sobreintensidades (PIAs con curvas B, C o D).</li>
+            <li><strong className="text-on-surface font-semibold">ITC-BT-24:</strong> Protección contra contactos directos e indirectos (Diferenciales Clase AC, A o B de ≤30mA).</li>
+          </ul>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Ámbito de Aplicación:</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Obligatorio en todo el territorio español para cualquier red con tensión nominal menor o igual a 1.000 V en corriente alterna o 1.500 V en corriente continua.</p>
+        </div>
+      </div>
+    );
+  } else if (title.includes('Guía Técnica')) {
+    return (
+      <div className="text-xs bg-surface-container-highest/50 p-4 rounded-lg space-y-3 text-on-surface-variant font-medium">
+        <p className="font-bold text-on-surface text-xs border-b border-outline-variant/20 pb-1 mb-1">Guía Oficial de Aplicación:</p>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Propósito Administrativo:</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Redactada por el Ministerio de Industria. No es un texto reglamentario rígido sino el criterio de interpretación oficial de obligado conocimiento ante dudas técnicas o auditorías.</p>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Factor de Motores (ITC-BT-47):</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Las líneas alimentadoras de motores deben dimensionarse para soportar un mínimo del 125% de la corriente nominal a plena carga (factor 1,25).</p>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Sistemas de Instalación:</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Define con precisión técnica de interpretación los tipos de canalizaciones: cables unipolares o multipolares en tubos, canales protectoras o bandejas.</p>
+        </div>
+      </div>
+    );
+  } else if (title.includes('Caídas') || title.includes('Anexo 2')) {
+    return (
+      <div className="text-xs bg-surface-container-highest/50 p-4 rounded-lg space-y-3 text-on-surface-variant font-medium">
+        <p className="font-bold text-on-surface text-xs border-b border-outline-variant/20 pb-1 mb-1">Anexo 2 - Caídas de Tensión:</p>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Metodología de Cálculo (ΔU):</span>
+          <ul className="mt-1 opacity-95 list-disc ml-4 space-y-1">
+            <li><strong className="text-on-surface font-semibold">Monofásica:</strong> ΔU = (2 · L · Ib · cosφ) / (γ · S)</li>
+            <li><strong className="text-on-surface font-semibold">Trifásica:</strong> ΔU = (√3 · L · Ib · cosφ) / (γ · S)</li>
+          </ul>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Conductividades Térmicas (γ):</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">La conductividad del metal se corrige según el tipo de aislamiento debido a la temperatura de servicio continuo:</p>
+          <ul className="mt-1 opacity-95 list-disc ml-4 space-y-0.5">
+            <li><strong className="text-on-surface font-semibold">PVC (70ºC de servicio):</strong> Cobre = 48, Aluminio = 30</li>
+            <li><strong className="text-on-surface font-semibold">XLPE o EPR (90ºC de servicio):</strong> Cobre = 44, Aluminio = 28</li>
+          </ul>
+        </div>
+        <div>
+          <span className="font-bold text-on-surface text-[11px] block">Influencia de Reactancia (X):</span>
+          <p className="mt-0.5 opacity-90 leading-relaxed">Para secciones menores de 120 mm² la reactancia inductiva es despreciable, utilizándose únicamente la componente resistiva de cálculo.</p>
+        </div>
+      </div>
+    );
+  } else {
+    return (
+      <div className="text-xs bg-surface-container-highest/50 p-4 rounded-lg space-y-3 text-on-surface-variant font-medium">
+        <p className="font-bold text-on-surface text-xs border-b border-outline-variant/20 pb-1 mb-1">Portal Oficial UNE:</p>
+        <p className="opacity-90 leading-relaxed">La norma UNE-HD 60364-5-52 proporciona las directrices unificadas europeas para la selección e instalación de canalizaciones y corrientes admisibles para cables.</p>
+      </div>
+    );
+  }
 }
 
 // --- Docs Screen ---
@@ -2624,7 +2732,7 @@ function DocsScreen() {
     },
     {
       title: 'Cálculo de Caídas de Tensión',
-      desc: 'Anexo 2 de la Guía Técnica con directrices y tablas (F2I2).',
+      desc: 'Guía Técnica de Aplicación Anexo 2 del Ministerio de Industria, Energía y Turismo.',
       url: '/anexo2.pdf',
       icon: Calculator,
       iconColor: 'bg-secondary/10 text-secondary',
@@ -2639,8 +2747,9 @@ function DocsScreen() {
   ];
 
   if (activeDoc) {
+    const isLocalPDF = activeDoc.url.startsWith('/') || activeDoc.url.endsWith('.pdf');
     return (
-      <div className="max-w-6xl mx-auto flex flex-col h-[calc(100vh-140px)]">
+      <div className="max-w-6xl mx-auto flex flex-col h-[calc(100vh-140px)] animate-in fade-in duration-300">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <button 
@@ -2657,17 +2766,64 @@ function DocsScreen() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </a>
         </div>
-        <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant/30 overflow-hidden shadow-sm relative">
-          {activeDoc.url.endsWith('.pdf') ? (
-            <PDFViewerWrapper url={activeDoc.url} />
-          ) : (
-            <iframe 
-              src={activeDoc.url} 
-              className="w-full h-full border-0"
-              title={activeDoc.title}
-            />
-          )}
-        </div>
+        
+        {isLocalPDF ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
+            {/* Split view: Left pane with explanations, right pane with rapid loaded local viewer */}
+            <div className="lg:col-span-4 bg-surface-container-low rounded-xl p-6 border border-outline-variant/30 flex flex-col justify-between space-y-6 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <BookOpen size={24} />
+                </div>
+                <h3 className="font-headline font-bold text-lg text-on-surface">{activeDoc.title}</h3>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Documento de referencia técnica integrada para consultas ágiles y fundamentación de cálculos según la normativa española.
+                </p>
+                {getDocSummary(activeDoc.title)}
+              </div>
+              <div className="space-y-3">
+                <a 
+                  href={activeDoc.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="w-full inline-flex items-center justify-center gap-2 bg-primary text-on-primary font-bold px-4 py-3 rounded-lg hover:bg-primary/95 transition-colors shadow-sm text-sm opacity-95 hover:opacity-100"
+                >
+                  <span>Abrir PDF a Pantalla Completa</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </a>
+                <p className="text-[10px] text-center text-on-surface-variant italic">
+                  * Nota: En dispositivos móviles, los archivos PDF se descargan o se abren de forma nativa. Si no visualiza el panel derecho, use el botón superior.
+                </p>
+              </div>
+            </div>
+            
+            <div className="lg:col-span-8 bg-surface-container-lowest rounded-xl border border-outline-variant/30 overflow-hidden shadow-sm relative h-full">
+              <div className="absolute top-3 left-3 z-10 bg-primary text-white text-[10px] uppercase font-bold px-2.5 py-1 rounded shadow">
+                Visor Integrado de Respaldo
+              </div>
+              <PDFViewerWrapper url={activeDoc.url} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 bg-surface-container-lowest rounded-xl border border-outline-variant/30 overflow-hidden shadow-sm relative">
+            <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center space-y-4">
+              <BookOpen size={48} className="text-secondary/40" />
+              <h3 className="font-bold text-on-surface">Documento Externo</h3>
+              <p className="text-sm text-on-surface-variant max-w-md leading-relaxed">
+                Las especificaciones de seguridad correspondientes al portal original impiden mostrar y embeber directamente este recurso en un iFrame. Por favor consulte el documento oficial en su portal original:
+              </p>
+              <a 
+                href={activeDoc.url} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="bg-primary text-on-primary font-bold px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-all text-sm flex items-center gap-2"
+              >
+                <span>Abrir Portal Externo</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
