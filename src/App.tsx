@@ -23,20 +23,62 @@ import {
   Search,
   Home,
   Building2,
-  Tag
+  Tag,
+  Download,
+  FileSpreadsheet,
+  CheckCircle2,
+  Trash2,
+  FolderOpen,
+  WifiOff,
+  Smartphone,
+  Save,
+  GitBranch
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { ExportModal } from './components/ExportModal';
+import { ElectricalCADScreen } from './components/ElectricalCADScreen';
+import { ChangelogModal } from './components/ChangelogModal';
+import { APP_VERSION } from './utils/versionHistory';
+import { CircuitRecord, ProjectMetadata } from './utils/pdfExport';
 
 // --- Types ---
-type Screen = 'dashboard' | 'power' | 'voltage_drop' | 'protections' | 'canalizacion' | 'installation' | 'advanced_circuit' | 'docs';
+type Screen = 'dashboard' | 'cad' | 'power' | 'voltage_drop' | 'protections' | 'canalizacion' | 'installation' | 'advanced_circuit' | 'docs';
 type Phase = 'mono' | 'tri';
 type CalcMode = 'power' | 'current';
 type Material = 'cu' | 'al';
+
+const INITIAL_CIRCUITS: CircuitRecord[] = [
+  { id: 'C1 - Alumbrado General', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '1.5 mm²', n: '1', carga: '2,3', ud: 'kW', fu: '1,0', fs: '1,0', ib: '10,00', in: '10', xin: '1,0', ir: '10,0', iz: '15,83', l: '18,0', deltaU: '1,12' },
+  { id: 'C2 - Tomas de Corriente', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '2.5 mm²', n: '1', carga: '3,68', ud: 'kW', fu: '1,0', fs: '1,0', ib: '16,00', in: '16', xin: '1,0', ir: '16,0', iz: '20,36', l: '22,0', deltaU: '1,68' },
+  { id: 'C3 - Climatización / AC', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '6 mm²', n: '1', carga: '5,5', ud: 'kW', fu: '1,0', fs: '1,0', ib: '23,91', in: '25', xin: '1,0', ir: '25,0', iz: '38,45', l: '15,0', deltaU: '0,87' },
+  { id: 'C4 - Fuerza Trifásica Nave', metodo: 'B1', conductores: '3F+N Cu', tension: '400,0', aisl: 'Z1', seccion: '16 mm²', n: '1', carga: '22,0', ud: 'kW', fu: '1,0', fs: '1,0', ib: '39,69', in: '40', xin: '1,0', ir: '40,0', iz: '62,20', l: '35,0', deltaU: '1,35' },
+  { id: 'C5 - Recarga Vehículo Eléc.', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '10 mm²', n: '1', carga: '7,4', ud: 'kW', fu: '1,0', fs: '1,0', ib: '32,17', in: '40', xin: '1,0', ir: '40,0', iz: '50,33', l: '28,0', deltaU: '1,89' }
+];
 
 // --- Main App Component ---
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('dashboard');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+
+  // Persistent circuits state in localStorage (Offline support for obra)
+  const [circuits, setCircuits] = useState<CircuitRecord[]>(() => {
+    const saved = localStorage.getItem('voltmetric_circuits');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return INITIAL_CIRCUITS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('voltmetric_circuits', JSON.stringify(circuits));
+  }, [circuits]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -45,24 +87,79 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-surface text-on-surface pb-20 md:pb-0 relative">
-      <TopBar onShowToast={showToast} />
+      <TopBar 
+        onShowToast={showToast} 
+        onOpenExport={() => setIsExportModalOpen(true)}
+        onOpenChangelog={() => setIsChangelogOpen(true)}
+      />
       
       <div className="flex flex-1 overflow-hidden">
-        <SideNav currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} onShowToast={showToast} />
+        {currentScreen !== 'cad' && (
+          <SideNav 
+            currentScreen={currentScreen} 
+            setCurrentScreen={setCurrentScreen} 
+            onShowToast={showToast}
+            onOpenExport={() => setIsExportModalOpen(true)}
+            circuitCount={circuits.length}
+          />
+        )}
         
         <main className="flex-1 overflow-y-auto w-full">
-          {currentScreen === 'dashboard' && <DashboardScreen onNavigate={setCurrentScreen} onShowToast={showToast} />}
+          {currentScreen === 'dashboard' && (
+            <DashboardScreen 
+              onNavigate={setCurrentScreen} 
+              onShowToast={showToast}
+              onOpenExport={() => setIsExportModalOpen(true)}
+              circuits={circuits}
+            />
+          )}
           {currentScreen === 'power' && <PowerCalculatorScreen />}
           {currentScreen === 'voltage_drop' && <VoltageDropScreen />}
           {currentScreen === 'protections' && <ProtectionsScreen />}
           {currentScreen === 'canalizacion' && <CanalizacionScreen />}
           {currentScreen === 'docs' && <DocsScreen />}
           {currentScreen === 'installation' && <InstallationScreen />}
-          {currentScreen === 'advanced_circuit' && <AdvancedCircuitScreen />}
+          {currentScreen === 'advanced_circuit' && (
+            <AdvancedCircuitScreen 
+              circuits={circuits}
+              setCircuits={setCircuits}
+              onShowToast={showToast}
+              onOpenExport={() => setIsExportModalOpen(true)}
+            />
+          )}
+          {currentScreen === 'cad' && (
+            <ElectricalCADScreen
+              circuits={circuits}
+              onShowToast={showToast}
+              onNavigateBack={() => setCurrentScreen('dashboard')}
+            />
+          )}
         </main>
       </div>
 
       <BottomNav currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} />
+
+      {/* Offline Mode Floating Alert */}
+      <OfflineIndicator />
+
+      {/* Export & Technical Report Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        circuits={circuits}
+        onImportCircuits={(newCircs) => {
+          setCircuits(newCircs);
+          showToast(`Proyecto importado con ${newCircs.length} líneas`);
+        }}
+        onShowToast={showToast}
+      />
+
+      {/* Version Control & Changelog Modal */}
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+        onShowToast={showToast}
+      />
 
       {/* Toast Notification */}
       {toastMessage && (
@@ -76,24 +173,58 @@ export default function App() {
 }
 
 // --- Navigation Components ---
-function TopBar({ onShowToast }: { onShowToast: (msg: string) => void }) {
+function TopBar({ 
+  onShowToast, 
+  onOpenExport,
+  onOpenChangelog
+}: { 
+  onShowToast: (msg: string) => void;
+  onOpenExport: () => void;
+  onOpenChangelog: () => void;
+}) {
   return (
     <header className="w-full sticky top-0 z-50 bg-surface/90 backdrop-blur-md shadow-sm border-b border-outline-variant/20">
       <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 w-full">
         <div className="flex items-center gap-3">
-          <button className="md:hidden text-primary active:opacity-80 transition-all">
-            <ArrowLeft size={24} />
-          </button>
-          <div className="hidden md:flex items-center justify-center bg-primary text-white p-1.5 rounded-lg mr-2">
+          <div className="flex items-center justify-center bg-primary text-white p-1.5 rounded-lg">
             <Zap size={20} fill="currentColor" />
           </div>
-          <h1 className="font-headline font-black text-primary tracking-tighter text-xl">VoltMetric Pro</h1>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-headline font-black text-primary tracking-tighter text-xl leading-none">VoltMetric Pro</h1>
+              <button
+                onClick={onOpenChangelog}
+                className="px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-mono font-bold text-[11px] tabular-nums transition-colors cursor-pointer flex items-center gap-1"
+                title="Ver Control de Cambios e Historial de Versiones"
+              >
+                <span>v{APP_VERSION}</span>
+                <History size={11} className="hidden sm:inline" />
+              </button>
+            </div>
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hidden sm:inline">REBT · Modo Obra</span>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => onShowToast('Guardar proyecto próximamente')} className="hidden md:block px-4 py-2 bg-primary text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all">
-            Save Project
+
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* In-app PWA install button (Desktop/Android/iOS) */}
+          <PWAInstallButton variant="topbar" onInstalledToast={onShowToast} />
+
+          {/* Quick Export Button */}
+          <button 
+            onClick={onOpenExport}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant/30 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+            title="Exportar Memoria Técnica oficial en PDF, Excel o Copia de Seguridad JSON"
+          >
+            <Download size={15} className="text-primary" />
+            <span className="hidden sm:inline">Exportar MTD</span>
+            <span className="sm:hidden">PDF</span>
           </button>
-          <button onClick={() => onShowToast('Perfil de usuario próximamente')} className="text-primary active:opacity-80 transition-all">
+
+          <button 
+            onClick={onOpenChangelog} 
+            className="text-primary active:opacity-80 transition-all p-1 cursor-pointer"
+            title={`Control de Cambios · VoltMetric Pro v${APP_VERSION}`}
+          >
             <UserCircle size={28} />
           </button>
         </div>
@@ -102,7 +233,19 @@ function TopBar({ onShowToast }: { onShowToast: (msg: string) => void }) {
   );
 }
 
-function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScreen: Screen, setCurrentScreen: (s: Screen) => void, onShowToast: (msg: string) => void }) {
+function SideNav({ 
+  currentScreen, 
+  setCurrentScreen, 
+  onShowToast,
+  onOpenExport,
+  circuitCount
+}: { 
+  currentScreen: Screen; 
+  setCurrentScreen: (s: Screen) => void; 
+  onShowToast: (msg: string) => void;
+  onOpenExport: () => void;
+  circuitCount: number;
+}) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     calculators: true
   });
@@ -113,18 +256,19 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
 
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', type: 'item' as const },
+    { id: 'cad', icon: GitBranch, label: 'Esquemas CAD', type: 'item' as const },
     { 
       id: 'calculators', 
       icon: Calculator, 
       label: 'Calculadoras', 
       type: 'group' as const,
       subItems: [
+        { id: 'advanced_circuit', icon: Calculator, label: 'Circuito Completo' },
         { id: 'power', icon: Zap, label: 'Potencia' },
         { id: 'voltage_drop', icon: Cpu, label: 'Caída de Tensión' },
         { id: 'canalizacion', icon: Layers, label: 'Canalización' },
         { id: 'protections', icon: Shield, label: 'Protecciones' },
-        { id: 'installation', icon: Gauge, label: 'Aislamiento' },
-        { id: 'advanced_circuit', icon: Calculator, label: 'Circuito Completo' }
+        { id: 'installation', icon: Gauge, label: 'Aislamiento' }
       ]
     },
     { id: 'docs', icon: BookOpen, label: 'Documentación', type: 'item' as const }
@@ -133,20 +277,26 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
   return (
     <aside className="hidden md:flex flex-col w-64 bg-surface-container border-r border-outline-variant/20 h-[calc(100vh-65px)] sticky top-[65px] overflow-y-auto">
       <div className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded bg-white p-2 shadow-sm flex items-center justify-center text-primary">
-            <Cpu size={24} />
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-primary text-white shadow-sm flex items-center justify-center">
+            <Cpu size={22} />
           </div>
           <div>
-            <p className="font-bold text-primary text-sm">Project #402</p>
-            <p className="text-xs text-on-surface-variant">Industrial Grid Alpha</p>
+            <p className="font-bold text-primary text-sm leading-tight">Proyecto Eléctrico</p>
+            <p className="text-xs text-on-surface-variant font-medium">{circuitCount} líneas activas</p>
           </div>
         </div>
-        <button onClick={() => onShowToast('Nuevo cálculo próximamente')} className="w-full py-2.5 bg-primary text-white rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-md text-sm font-bold">
-          + New Calculation
+
+        <button 
+          onClick={onOpenExport} 
+          className="w-full py-2.5 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-md text-xs font-bold uppercase tracking-wider cursor-pointer active:scale-[0.98]"
+        >
+          <Download size={15} />
+          Exportar Memoria
         </button>
       </div>
-      <nav className="flex-1 flex flex-col px-4 gap-1 pb-6">
+
+      <nav className="flex-1 flex flex-col px-4 gap-1 pb-4">
         {navItems.map((item) => {
           if (item.type === 'item') {
             const Icon = item.icon;
@@ -218,6 +368,11 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
           }
         })}
       </nav>
+
+      {/* Sidebar Footer with PWA offline badge */}
+      <div className="p-4 border-t border-outline-variant/20 bg-surface-container-lowest/50">
+        <PWAInstallButton variant="sidebar" onInstalledToast={onShowToast} />
+      </div>
     </aside>
   );
 }
@@ -225,6 +380,7 @@ function SideNav({ currentScreen, setCurrentScreen, onShowToast }: { currentScre
 function BottomNav({ currentScreen, setCurrentScreen }: { currentScreen: Screen, setCurrentScreen: (s: Screen) => void }) {
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'cad', icon: GitBranch, label: 'Esquema CAD' },
     { id: 'advanced_circuit', icon: Calculator, label: 'Línea BT' },
     { id: 'power', icon: Zap, label: 'Calculadoras' },
     { id: 'voltage_drop', icon: Cpu, label: 'Caída de T.' },
@@ -264,27 +420,79 @@ function BottomNav({ currentScreen, setCurrentScreen }: { currentScreen: Screen,
 
 // --- Screens ---
 
-function DashboardScreen({ onNavigate, onShowToast }: { onNavigate: (s: Screen) => void, onShowToast: (msg: string) => void }) {
+function DashboardScreen({ 
+  onNavigate, 
+  onShowToast,
+  onOpenExport,
+  circuits
+}: { 
+  onNavigate: (s: Screen) => void; 
+  onShowToast: (msg: string) => void;
+  onOpenExport: () => void;
+  circuits: CircuitRecord[];
+}) {
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 md:py-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
       {/* Hero Industrial Header */}
-      <section className="mb-8 p-6 md:p-10 rounded-xl industrial-gradient text-white flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden shadow-lg">
-        <div className="z-10">
-          <span className="font-label text-secondary-container uppercase tracking-widest text-xs font-bold mb-2 block">Central de Ingeniería</span>
-          <h2 className="font-headline text-3xl md:text-4xl font-extrabold mb-2 tracking-tight">Panel de Control REBT</h2>
-          <p className="text-primary-fixed-dim max-w-md text-sm md:text-base opacity-90">Gestione sus cálculos de instalaciones eléctricas de baja tensión con precisión técnica certificada.</p>
+      <section className="mb-8 p-6 md:p-10 rounded-2xl industrial-gradient text-white flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden shadow-xl border border-white/10">
+        <div className="z-10 max-w-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-label bg-white/20 text-white uppercase tracking-widest text-[10px] font-extrabold px-2.5 py-1 rounded-full backdrop-blur-sm">
+              REBT R.D. 842/2002
+            </span>
+            <span className="font-label bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 uppercase tracking-widest text-[10px] font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Modo Obra Offline Activo
+            </span>
+          </div>
+          <h2 className="font-headline text-3xl md:text-4xl font-black mb-2 tracking-tight">Panel de Control & Memoria REBT</h2>
+          <p className="text-slate-200 text-sm md:text-base opacity-90 leading-relaxed">
+            Dimensionado de conductores, caídas de tensión y protecciones. Generación instantánea de memorias técnicas oficiales y esquemas unifilares sin conexión a internet.
+          </p>
+
+          <div className="flex flex-wrap gap-3 mt-6">
+            <button
+              onClick={() => onNavigate('cad')}
+              className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
+            >
+              <GitBranch size={16} />
+              Estudio CAD Unifilar
+            </button>
+            <button
+              onClick={onOpenExport}
+              className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer"
+            >
+              <Download size={16} />
+              Exportar Memoria MTD (PDF)
+            </button>
+            <button
+              onClick={() => onNavigate('advanced_circuit')}
+              className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 backdrop-blur-sm active:scale-95 transition-all cursor-pointer"
+            >
+              <Calculator size={16} />
+              Ver Líneas ({circuits.length})
+            </button>
+          </div>
         </div>
-        <div className="mt-6 md:mt-0 z-10">
-          <a href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" target="_blank" rel="noopener noreferrer" className="bg-white/10 hover:bg-white/20 transition-colors border border-white/20 backdrop-blur-md p-4 rounded-lg block cursor-pointer">
-            <p className="font-label text-xs uppercase opacity-70 mb-1">Estado del Sistema</p>
+
+        <div className="mt-6 md:mt-0 z-10 shrink-0 flex flex-col gap-3">
+          <a 
+            href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="bg-white/10 hover:bg-white/20 transition-all border border-white/20 backdrop-blur-md p-4 rounded-xl block cursor-pointer"
+          >
+            <p className="font-label text-xs uppercase opacity-70 mb-1">Normativa Oficial</p>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-tertiary-fixed rounded-full animate-pulse"></span>
-              <span className="font-bold text-sm">Normativa Vigente 2024</span>
+              <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping"></span>
+              <span className="font-bold text-sm">BOE Consolidado Vigente</span>
             </div>
+            <p className="text-[11px] text-slate-300 mt-1">ITC-BT-01 a ITC-BT-52</p>
           </a>
         </div>
-        <div className="absolute -right-10 -bottom-10 opacity-10">
-          <Zap size={200} fill="currentColor" />
+
+        <div className="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
+          <Zap size={240} fill="currentColor" />
         </div>
       </section>
 
@@ -292,72 +500,145 @@ function DashboardScreen({ onNavigate, onShowToast }: { onNavigate: (s: Screen) 
       <h3 className="font-headline text-lg font-bold mb-4 px-1 text-on-surface">Herramientas Principales</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         <ToolCard 
-          icon={Zap} 
-          title="Cálculo de Potencia" 
-          desc="Dimensionado de cargas monofásicas y trifásicas según ITC-BT-10."
-          action="Empezar"
+          icon={Calculator} 
+          title="Circuito Completo BT" 
+          desc="Cálculo térmico, cortocircuito e impedancia para tabla MTD."
+          action="Calcular Línea"
           colorClass="text-primary border-primary"
-          bgClass="bg-surface-container"
-          onClick={() => onNavigate('power')}
+          bgClass="bg-primary/10"
+          onClick={() => onNavigate('advanced_circuit')}
         />
         <ToolCard 
           icon={Cpu} 
           title="Sección de Cableado" 
           desc="Caída de tensión y densidad de corriente según ITC-BT-19."
-          action="Calcular"
+          action="Calcular Caída"
           colorClass="text-secondary border-secondary"
           bgClass="bg-secondary-container/20"
           onClick={() => onNavigate('voltage_drop')}
         />
         <ToolCard 
           icon={Shield} 
-          title="Protecciones" 
-          desc="Selección de PIA, Diferenciales y Sobretensiones (ITC-BT-22)."
+          title="Protecciones Schneider" 
+          desc="Selección de PIA Resi9/Acti9 y Diferenciales (ITC-BT-22)."
           action="Configurar"
           colorClass="text-tertiary-container border-tertiary-container"
           bgClass="bg-tertiary-fixed-dim/30"
           onClick={() => onNavigate('protections')}
         />
         <ToolCard 
-          icon={Gauge} 
-          title="Aislamiento" 
-          desc="Resistencia de aislamiento y rigidez dieléctrica (UNE)."
-          action="Verificar"
+          icon={Layers} 
+          title="Canalización & Tubos" 
+          desc="Diámetro exterior de tubos según ITC-BT-21."
+          action="Dimensionar"
           colorClass="text-error border-error"
           bgClass="bg-error-container/20"
-          onClick={() => onNavigate('installation')}
+          onClick={() => onNavigate('canalizacion')}
         />
       </div>
 
       {/* Recent Calculations */}
       <div className="flex justify-between items-center mb-4 px-1">
-        <h3 className="font-headline text-lg font-bold text-on-surface">Cálculos Recientes</h3>
-        <button className="text-sm font-bold text-primary hover:underline">Ver todo</button>
+        <div>
+          <h3 className="font-headline text-lg font-bold text-on-surface">Circuitos Registrados en Obra</h3>
+          <p className="text-xs text-on-surface-variant">Líneas guardadas localmente en este dispositivo ({circuits.length})</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={onOpenExport}
+            className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+          >
+            <Download size={14} /> Exportar
+          </button>
+          <span className="text-on-surface-variant">·</span>
+          <button 
+            onClick={() => onNavigate('advanced_circuit')} 
+            className="text-xs font-bold text-primary hover:underline"
+          >
+            Ver todas
+          </button>
+        </div>
       </div>
-      <div className="bg-surface-container rounded-xl overflow-x-auto mb-8 border border-outline-variant/20">
+
+      <div className="bg-surface-container rounded-xl overflow-x-auto mb-8 border border-outline-variant/20 shadow-sm">
         <table className="w-full text-left border-collapse min-w-[500px]">
           <thead>
-            <tr className="bg-surface-container-high">
-              <th className="px-4 md:px-6 py-4 font-label text-xs uppercase tracking-widest text-on-surface-variant">Proyecto / ID</th>
-              <th className="hidden md:table-cell px-6 py-4 font-label text-xs uppercase tracking-widest text-on-surface-variant">Tipo</th>
-              <th className="px-4 md:px-6 py-4 font-label text-xs uppercase tracking-widest text-on-surface-variant text-right">Resultado</th>
-              <th className="px-4 md:px-6 py-4 font-label text-xs uppercase tracking-widest text-on-surface-variant text-center">Estado</th>
+            <tr className="bg-surface-container-high border-b border-outline-variant/15">
+              <th className="px-4 md:px-6 py-3.5 font-label text-xs uppercase tracking-widest text-on-surface-variant">Circuito / Línea</th>
+              <th className="hidden md:table-cell px-6 py-3.5 font-label text-xs uppercase tracking-widest text-on-surface-variant">Método</th>
+              <th className="px-4 md:px-6 py-3.5 font-label text-xs uppercase tracking-widest text-on-surface-variant text-right">Sección & Carga</th>
+              <th className="px-4 md:px-6 py-3.5 font-label text-xs uppercase tracking-widest text-on-surface-variant text-center">Estado REBT</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-outline-variant/10">
-            <RecentRow title="Nave Industrial Sector C" id="2024-0892" type="Sección Cable" result="35 mm²" subResult="Cu XLPE" status="Cumple" statusColor="bg-tertiary-fixed text-tertiary-container" />
-            <RecentRow title="Instalación Vivienda Lujo" id="2024-0885" type="Potencia GA" result="9.2 kW" subResult="Monofásica" status="Cumple" statusColor="bg-tertiary-fixed text-tertiary-container" bg="bg-surface-container-low/50" />
-            <RecentRow title="Edificio Oficinas Central" id="2024-0870" type="Derivación Indiv." result="16 mm²" subResult="Caída > 1.5%" resultColor="text-error" status="Revisar" statusColor="bg-error-container text-on-error-container" />
+          <tbody className="divide-y divide-outline-variant/10 text-sm">
+            {circuits.slice(0, 5).map((circ) => {
+              const deltaNum = parseFloat(circ.deltaU.replace(',', '.')) || 0;
+              const isCompliant = deltaNum <= 5;
+              return (
+                <tr 
+                  key={circ.id} 
+                  onClick={() => onNavigate('advanced_circuit')} 
+                  className="hover:bg-surface-container-low transition-colors cursor-pointer group"
+                >
+                  <td className="px-4 md:px-6 py-3.5">
+                    <div className="font-bold text-on-surface group-hover:text-primary transition-colors flex items-center gap-2">
+                      <span>{circ.id}</span>
+                    </div>
+                    <div className="text-[11px] text-on-surface-variant">
+                      {circ.conductores} · {circ.l}m · {circ.tension}V
+                    </div>
+                  </td>
+                  <td className="hidden md:table-cell px-6 py-3.5 font-mono text-xs font-bold text-on-surface-variant">
+                    {circ.metodo} ({circ.aisl})
+                  </td>
+                  <td className="px-4 md:px-6 py-3.5 text-right font-mono">
+                    <span className="font-bold text-on-surface block text-sm">{circ.seccion}</span>
+                    <span className="text-[10px] text-on-surface-variant block">
+                      {circ.carga} kW · ΔU: {circ.deltaU}%
+                    </span>
+                  </td>
+                  <td className="px-4 md:px-6 py-3.5 text-center">
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1 ${
+                      isCompliant 
+                        ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' 
+                        : 'bg-red-500/10 text-red-600 border border-red-500/20'
+                    }`}>
+                      {isCompliant ? 'CUMPLE' : 'REVISAR'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <QuickLink icon={Layers} label="Canalización" onClick={() => onNavigate('canalizacion')} />
-        <QuickLink icon={History} label="Historial" onClick={() => onShowToast('Historial de proyectos próximamente')} />
-        <QuickLink icon={FileText} label="Plantillas" onClick={() => onShowToast('Gestor de plantillas próximamente')} />
-        <QuickLink icon={RefreshCw} label="Sincronizar" onClick={() => onShowToast('Sincronización en la nube próximamente')} />
+        <QuickLink 
+          icon={FileText} 
+          label="Memoria MTD (PDF)" 
+          onClick={onOpenExport} 
+        />
+        <QuickLink 
+          icon={FileSpreadsheet} 
+          label="Exportar Excel/CSV" 
+          onClick={onOpenExport} 
+        />
+        <QuickLink 
+          icon={Smartphone} 
+          label="Instalar en Android" 
+          onClick={() => {
+            const btn = document.querySelector('button[title*="Instalar"]') as HTMLButtonElement;
+            if (btn) btn.click();
+            else onShowToast('Usa la opción Instalar App en la barra superior');
+          }} 
+        />
+        <QuickLink 
+          icon={RefreshCw} 
+          label="Copia JSON" 
+          onClick={onOpenExport} 
+        />
       </div>
     </div>
   );
@@ -1837,19 +2118,29 @@ function InstallationScreen() {
   );
 }
 
-function AdvancedCircuitScreen() {
+function AdvancedCircuitScreen({
+  circuits,
+  setCircuits,
+  onShowToast,
+  onOpenExport
+}: {
+  circuits: CircuitRecord[];
+  setCircuits: React.Dispatch<React.SetStateAction<CircuitRecord[]>>;
+  onShowToast: (msg: string) => void;
+  onOpenExport: () => void;
+}) {
   const [activeTab, setActiveTab] = useState<'condiciones' | 'receptor' | 'seccion' | 'tabla'>('receptor');
   
   // State for receptor tab
   const [tension, setTension] = useState('400.0');
   const [aislamiento, setAislamiento] = useState('Z1');
   const [alimentacion, setAlimentacion] = useState('3F+N');
-  const [numero, setNumero] = useState('2');
-  const [potencia, setPotencia] = useState('40.0');
-  const [cosPhi, setCosPhi] = useState('0.8');
-  const [longitud, setLongitud] = useState('10.0');
+  const [numero, setNumero] = useState('1');
+  const [potencia, setPotencia] = useState('15.0');
+  const [cosPhi, setCosPhi] = useState('0.85');
+  const [longitud, setLongitud] = useState('25.0');
   const [caidaMax, setCaidaMax] = useState('5.0');
-  const [intensidadNominal, setIntensidadNominal] = useState('125');
+  const [intensidadNominal, setIntensidadNominal] = useState('32');
   const [conductoresPorFase, setConductoresPorFase] = useState('1');
   
   // State for condiciones tab
@@ -1867,12 +2158,9 @@ function AdvancedCircuitScreen() {
   const [tipoConductor, setTipoConductor] = useState<'cobre' | 'aluminio'>('cobre');
   const [calculoConductor, setCalculoConductor] = useState<'unipolar' | 'multiconductor'>('unipolar');
 
-  // Circuit ID
-  const [circuitoId, setCircuitoId] = useState('Circuito3');
-  const [records, setRecords] = useState<any[]>([
-    { id: 'Circuito', metodo: 'B1', conductores: '1F+N+CP', tension: '230,0', aisl: 'Z1', seccion: '3G(1x10)', n: '1', carga: '4,0', ud: 'kW', fu: '1,0', fs: '1,0', ib: '21,74', in: '25', xin: '1,0', ir: '25,0', iz: '32,23', l: '10,0', deltaU: '0,31' },
-    { id: 'Circuito2', metodo: 'B1', conductores: '3F+N', tension: '400,0', aisl: 'Z1', seccion: '4x(1x50)', n: '2', carga: '4,0', ud: 'kW', fu: '1,0', fs: '1,0', ib: '14,43', in: '63', xin: '1,0', ir: '63,0', iz: '75,78', l: '10,0', deltaU: '0,02' }
-  ]);
+  // Circuit ID & search state
+  const [circuitoId, setCircuitoId] = useState(`C${circuits.length + 1} - Nueva Línea`);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Dynamic Calculations (Move out of renderTabContent)
   const v = parseFloat(tension) || 400;
@@ -1944,8 +2232,8 @@ function AdvancedCircuitScreen() {
 
   const handleSave = () => {
     const passingRow = tableRows.find(r => r.pass);
-    const newRecord = {
-      id: circuitoId,
+    const newRecord: CircuitRecord = {
+      id: circuitoId.trim() || `C${circuits.length + 1}`,
       metodo: metodo,
       conductores: (alimentacion) + ' ' + (calculoConductor === 'unipolar' ? '1x' : '') + (tipoConductor === 'cobre' ? 'Cu' : 'Al'),
       tension: tension.replace('.', ','),
@@ -1964,7 +2252,48 @@ function AdvancedCircuitScreen() {
       l: longitud.replace('.', ','),
       deltaU: passingRow ? passingRow.caida.replace('.', ',') : '---'
     };
-    setRecords([newRecord, ...records]);
+
+    const existingIndex = circuits.findIndex(c => c.id.toLowerCase() === newRecord.id.toLowerCase());
+    if (existingIndex >= 0) {
+      const updated = [...circuits];
+      updated[existingIndex] = newRecord;
+      setCircuits(updated);
+      onShowToast(`Línea "${newRecord.id}" actualizada.`);
+    } else {
+      setCircuits([newRecord, ...circuits]);
+      onShowToast(`Línea "${newRecord.id}" guardada en la memoria.`);
+    }
+  };
+
+  const handleClear = () => {
+    setCircuitoId(`C${circuits.length + 1} - Línea`);
+    setPotencia('5.0');
+    setLongitud('20.0');
+    setCosPhi('0.85');
+    onShowToast('Formulario restablecido para nuevo cálculo');
+  };
+
+  const handleOpenRecord = (rec: CircuitRecord) => {
+    setCircuitoId(rec.id);
+    setMetodo(rec.metodo || 'B1');
+    setTension(rec.tension.replace(',', '.'));
+    setAislamiento(rec.aisl || 'Z1');
+    setPotencia(rec.carga.replace(',', '.'));
+    setLongitud(rec.l.replace(',', '.'));
+    setIntensidadNominal(rec.in || '25');
+    if (rec.conductores.includes('1F')) {
+      setAlimentacion('1F+N');
+    } else {
+      setAlimentacion('3F+N');
+    }
+    setActiveTab('receptor');
+    onShowToast(`Datos de "${rec.id}" cargados en el formulario.`);
+  };
+
+  const handleDeleteRecord = (id: string) => {
+    const remaining = circuits.filter(c => c.id !== id);
+    setCircuits(remaining);
+    onShowToast(`Línea "${id}" eliminada del proyecto.`);
   };
 
   const renderTabContent = () => {
@@ -2444,65 +2773,90 @@ function AdvancedCircuitScreen() {
         </div>
 
         {/* Action Buttons Row */}
-        <div className="bg-surface-container-lowest p-6 flex flex-wrap gap-4 items-center justify-center lg:justify-start">
-            <div className="flex bg-surface-container border border-outline-variant/30 rounded-lg overflow-hidden shrink-0 shadow-inner focus-within:ring-2 focus-within:ring-primary/20 transition-all">
-               <span className="px-4 py-2 border-r border-outline-variant/30 text-sm font-bold text-on-surface-variant bg-surface-container-low min-w-[80px] text-center">Circuito</span>
-               <input 
-                 type="text" 
-                 className="px-4 py-2 bg-transparent text-sm font-bold text-on-surface outline-none w-32 focus:bg-primary/5 transition-colors" 
-                 value={circuitoId}
-                 onChange={(e) => setCircuitoId(e.target.value)}
-               />
+        <div className="bg-surface-container-lowest p-6 flex flex-wrap gap-3 items-center justify-between border-t border-outline-variant/15">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex bg-surface-container border border-outline-variant/30 rounded-lg overflow-hidden shrink-0 shadow-inner focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+                 <span className="px-4 py-2 border-r border-outline-variant/30 text-xs font-bold text-on-surface-variant bg-surface-container-low min-w-[70px] text-center">ID Línea</span>
+                 <input 
+                   type="text" 
+                   className="px-3.5 py-2 bg-transparent text-xs font-bold text-on-surface outline-none w-44 focus:bg-primary/5 transition-colors" 
+                   value={circuitoId}
+                   onChange={(e) => setCircuitoId(e.target.value)}
+                   placeholder="Ej: C1 - Alumbrado"
+                 />
+              </div>
+              
+              <button 
+                onClick={handleClear}
+                className="bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-sm active:scale-[0.98] cursor-pointer"
+                title="Limpiar campos para una nueva línea"
+              >
+                Limpiar
+              </button>
+              <button 
+                onClick={handleSave}
+                className="bg-primary hover:bg-primary-container text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
+              >
+                <Save size={15} />
+                Guardar Línea
+              </button>
             </div>
-            
-            <button className="bg-[#4e6df5] hover:bg-[#3d5ce4] text-white font-bold text-sm px-8 py-2.5 rounded-lg transition-colors ml-auto lg:ml-0 shadow-sm active:scale-[0.98]">
-              Borrar
-            </button>
-            <button 
-              onClick={handleSave}
-              className="bg-[#4e6df5] hover:bg-[#3d5ce4] text-white font-bold text-sm px-8 py-2.5 rounded-lg transition-colors shadow-sm active:scale-[0.98]"
-            >
-              Guardar
-            </button>
-            <a 
-              href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="bg-[#4e6df5] hover:bg-[#3d5ce4] text-white p-2.5 rounded-lg transition-colors shadow-sm cursor-pointer px-4 flex items-center justify-center"
-              title="Normativa vigente del REBT"
-            >
-               <BookOpen size={18}/>
-            </a>
-            <button className="text-[#4e6df5] hover:bg-[#4e6df5]/10 p-2.5 rounded-full transition-colors ml-1 border-2 border-transparent hover:border-[#4e6df5]/20">
-              <Info size={24} />
-            </button>
+
+            <div className="flex items-center gap-2.5 ml-auto">
+              <button
+                onClick={onOpenExport}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
+                title="Generar Memoria Técnica oficial completa en PDF con unifilar y tabla"
+              >
+                <FileText size={15} />
+                Exportar Memoria MTD
+              </button>
+              <a 
+                href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="bg-surface-container hover:bg-surface-container-high text-primary p-2.5 rounded-lg transition-colors shadow-sm cursor-pointer border border-outline-variant/30 flex items-center justify-center"
+                title="Consultar BOE oficial de Baja Tensión"
+              >
+                 <BookOpen size={16}/>
+              </a>
+            </div>
         </div>
 
       </div>
 
       {/* Table List at Bottom */}
-      <div className="mt-8 bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/20 overflow-hidden xl:w-[94%] mx-auto pb-10">
+      <div className="mt-8 bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/20 overflow-hidden xl:w-[94%] mx-auto pb-6">
         <div className="p-4 md:p-6 border-b border-outline-variant/20 bg-surface flex justify-between items-center flex-wrap gap-4">
-           <div className="flex items-center gap-6 text-sm">
-              <label className="text-on-surface-variant font-bold text-xs uppercase tracking-wider flex items-center gap-3">
-                Filas por página
-                <div className="relative">
-                  <select className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 outline-none appearance-none font-bold text-on-surface shadow-sm focus:ring-2 focus:ring-primary min-w-[70px]">
-                    <option>10</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                </div>
-              </label>
-              
+           <div className="flex items-center gap-4 flex-wrap text-sm">
               <div className="relative">
-                <input type="text" placeholder="Buscar..." className="pl-10 pr-4 py-2 border border-outline-variant/30 rounded-lg bg-surface-container-lowest text-sm outline-none focus:border-primary shadow-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all font-medium" />
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-[2px] border-on-surface-variant rounded-full before:content-[''] before:absolute before:w-1.5 before:h-[2px] before:bg-on-surface-variant before:top-[100%] before:left-[80%] before:rotate-45 opacity-50"></span>
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por ID, sección, método..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 border border-outline-variant/30 rounded-lg bg-surface-container-lowest text-xs outline-none focus:border-primary shadow-sm w-72 focus:ring-2 focus:ring-primary/20 transition-all font-medium text-on-surface" 
+                />
               </div>
+
+              <button 
+                onClick={onOpenExport}
+                className="px-3.5 py-1.5 bg-surface-container hover:bg-surface-container-high text-xs font-bold text-primary rounded-lg border border-outline-variant/30 flex items-center gap-1.5 shadow-sm transition-all"
+              >
+                <Download size={14} />
+                Exportar Todo ({circuits.length})
+              </button>
            </div>
            
            <div className="text-xs text-on-surface-variant text-right font-medium">
-             <span className="font-bold text-on-surface">1-3</span> de <span className="font-bold text-on-surface">3</span> registros<br/>
-             Página <span className="font-bold text-on-surface">1</span> de 1
+             <span className="font-bold text-on-surface">
+               {circuits.filter(c => {
+                 if (!searchTerm) return true;
+                 const q = searchTerm.toLowerCase();
+                 return c.id.toLowerCase().includes(q) || c.metodo.toLowerCase().includes(q) || c.seccion.toLowerCase().includes(q);
+               }).length}
+             </span> de <span className="font-bold text-on-surface">{circuits.length}</span> líneas guardadas en este proyecto
            </div>
         </div>
 
@@ -2510,7 +2864,7 @@ function AdvancedCircuitScreen() {
           <table className="w-full text-sm text-center font-mono whitespace-nowrap min-w-[1200px]">
             <thead className="bg-[#fcfdfd] text-[0.65rem] border-b border-outline-variant/20 text-on-surface-variant uppercase tracking-wider font-extrabold pb-4 shadow-sm">
               <tr>
-                <th className="py-4 px-4 align-middle">Abrir</th>
+                <th className="py-4 px-4 align-middle">Cargar</th>
                 <th className="py-4 px-4 text-left align-middle text-[#000]">Circuito</th>
                 <th className="py-4 px-4 align-middle text-[#000]">Método</th>
                 <th className="py-4 px-4 align-middle text-[#000]">Conductores</th>
@@ -2529,54 +2883,67 @@ function AdvancedCircuitScreen() {
                 <th className="py-4 px-4 align-middle text-[#000]">Iz' <span className="lowercase font-sans font-medium text-on-surface-variant">(A)</span></th>
                 <th className="py-4 px-4 align-middle text-[#000]">L <span className="lowercase font-sans font-medium text-on-surface-variant">(m)</span></th>
                 <th className="py-4 px-4 align-middle text-[#000]">ΔU <span className="lowercase font-sans font-medium text-on-surface-variant">(%)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">Eliminar</th>
+                <th className="py-4 px-4 align-middle text-[#000]">Borrar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10 text-on-surface bg-surface-container-lowest text-[13px] font-medium">
-              <tr className="hover:bg-surface-container/40 transition-colors group">
-                <td className="py-3 px-4"><button className="text-[#4e6df5] hover:text-[#3d5ce4] transition-colors p-1.5 rounded active:scale-95"><BookOpen size={18} strokeWidth={2.5}/></button></td>
-                <td className="py-3 px-4 text-left font-sans font-bold text-on-surface/90">Circuito</td>
-                <td className="py-3 px-4 text-on-surface-variant">B1</td>
-                <td className="py-3 px-4 text-on-surface-variant">1F+N+CP</td>
-                <td className="py-3 px-4 text-on-surface-variant">230,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">Z1</td>
-                <td className="py-3 px-4 font-bold">3G(1x10)</td>
-                <td className="py-3 px-4 text-on-surface-variant">1</td>
-                <td className="py-3 px-4 text-on-surface-variant">4,0</td>
-                <td className="py-3 px-4 font-sans text-xs text-on-surface-variant/70">kW</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface">21,74</td>
-                <td className="py-3 px-4 text-on-surface-variant">25</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">25,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">32,23</td>
-                <td className="py-3 px-4 text-on-surface-variant">10,0</td>
-                <td className="py-3 px-4 text-on-surface">0,31</td>
-                <td className="py-3 px-4"><button className="text-error/70 hover:text-error transition-colors active:scale-95"><span className="w-5 h-5 border-[1.5px] border-current rounded-full flex items-center justify-center font-bold pb-[1px]">-</span></button></td>
-              </tr>
-              <tr className="hover:bg-surface-container/40 transition-colors group">
-                <td className="py-3 px-4"><button className="text-[#4e6df5] hover:text-[#3d5ce4] transition-colors p-1.5 rounded active:scale-95"><BookOpen size={18} strokeWidth={2.5}/></button></td>
-                <td className="py-3 px-4 text-left font-sans font-bold text-on-surface/90">Circuito2</td>
-                <td className="py-3 px-4 text-on-surface-variant">B1</td>
-                <td className="py-3 px-4 text-on-surface-variant">3F+N</td>
-                <td className="py-3 px-4 text-on-surface-variant">400,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">Z1</td>
-                <td className="py-3 px-4 font-bold">4x(1x50)</td>
-                <td className="py-3 px-4 text-on-surface-variant">2</td>
-                <td className="py-3 px-4 text-on-surface-variant">4,0</td>
-                <td className="py-3 px-4 font-sans text-xs text-on-surface-variant/70">kW</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface">14,43</td>
-                <td className="py-3 px-4 text-on-surface-variant">63</td>
-                <td className="py-3 px-4 text-on-surface-variant">1,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">63,0</td>
-                <td className="py-3 px-4 text-on-surface-variant">75,78</td>
-                <td className="py-3 px-4 text-on-surface-variant">10,0</td>
-                <td className="py-3 px-4 text-on-surface">0,02</td>
-                <td className="py-3 px-4"><button className="text-error/70 hover:text-error transition-colors active:scale-95"><span className="w-5 h-5 border-[1.5px] border-current rounded-full flex items-center justify-center font-bold pb-[1px]">-</span></button></td>
-              </tr>
+              {circuits
+                .filter(c => {
+                  if (!searchTerm) return true;
+                  const q = searchTerm.toLowerCase();
+                  return c.id.toLowerCase().includes(q) || 
+                         c.metodo.toLowerCase().includes(q) || 
+                         c.seccion.toLowerCase().includes(q) ||
+                         c.conductores.toLowerCase().includes(q);
+                })
+                .map((circ) => {
+                  const deltaNum = parseFloat(circ.deltaU.replace(',', '.')) || 0;
+                  const isOk = deltaNum <= 5;
+                  return (
+                    <tr key={circ.id} className="hover:bg-surface-container/40 transition-colors group">
+                      <td className="py-3 px-4">
+                        <button 
+                          onClick={() => handleOpenRecord(circ)}
+                          className="text-[#4e6df5] hover:text-[#3d5ce4] p-1.5 rounded active:scale-95 transition-transform cursor-pointer"
+                          title="Cargar esta línea en el formulario para editar o recalcular"
+                        >
+                          <FolderOpen size={18} />
+                        </button>
+                      </td>
+                      <td className="py-3 px-4 text-left font-sans font-bold text-on-surface/90">
+                        {circ.id}
+                      </td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.metodo}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.conductores}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.tension}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.aisl}</td>
+                      <td className="py-3 px-4 font-bold text-primary">{circ.seccion}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.n}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.carga}</td>
+                      <td className="py-3 px-4 font-sans text-xs text-on-surface-variant/70">{circ.ud}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.fu}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.fs}</td>
+                      <td className="py-3 px-4 text-on-surface">{circ.ib}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.in}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.xin}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.ir}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.iz}</td>
+                      <td className="py-3 px-4 text-on-surface-variant">{circ.l}</td>
+                      <td className={`py-3 px-4 font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {circ.deltaU}
+                      </td>
+                      <td className="py-3 px-4">
+                        <button 
+                          onClick={() => handleDeleteRecord(circ.id)}
+                          className="text-error/60 hover:text-error transition-colors p-1.5 rounded active:scale-95 cursor-pointer"
+                          title="Eliminar este circuito"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
