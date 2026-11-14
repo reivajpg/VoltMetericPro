@@ -1,6 +1,0 @@
-{
-  "summary": "Plan de implementación para la versión 2.7.0 de VoltMetric Pro:\n- Simbología vectorial IEC 60617 / UNE-EN 60617 de alta fidelidad técnica (disparadores térmico, magnético, toroide diferencial con botón de test, varistor de sobretensiones y contactor).\n- Consolidación de descargas en un botón único desplegable («Exportar Plano»: PDF A3, DXF, SVG y PNG HD).\n- Presets rápidos de circuitos estándar REBT ITC-BT-25 (C1 a C12) con calibres y secciones oficiales.\n- Sistema de Deshacer/Rehacer (Undo/Redo) en el lienzo CAD con atajos de teclado.\n- Soporte para subcuadros secundarios en cascada.\n- Tabla resumen de potencias y cargas integrada directamente en el plano técnico A3.\n- Incremento de versión a v2.7.0 con control de cambios auditable.",
-  "updatedAt": "2026-11-03T19:59:28.914602540Z",
-  "requestFeedback": true,
-  "userFacing": true
-}

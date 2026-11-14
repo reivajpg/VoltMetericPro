@@ -21,7 +21,83 @@ export interface CircuitRecord {
   l: string;
   deltaU: string;
   nota?: string;
+  // Extended v2.8.0 fields for Panelboard & CAD association
+  grupoId?: string;          // e.g. 'ID1', 'ID2', 'DIRECT'
+  curva?: string;            // e.g. 'C', 'B', 'D', 'MA'
+  poderCorte?: string;       // e.g. '6kA', '10kA', '15kA'
+  tipoProteccion?: string;   // 'Interruptor automático' | 'Fusible gG' | 'Guardamotor'
+  seccionNeutro?: string;    // e.g. '2.5 mm²'
+  seccionCp?: string;        // e.g. '2.5 mm²'
+  cosPhi?: string;           // e.g. '0,85'
+  tempAmbiente?: string;     // e.g. '40'
+  iccPrevista?: string;      // e.g. '6,0'
 }
+
+export interface DifferentialGroup {
+  id: string;                // e.g. 'ID1', 'ID2'
+  name: string;              // e.g. 'Alumbrado y Tomas Generales'
+  poles: '2P' | '4P';
+  calibre: string;           // '25' | '40' | '63' | '80' | '100'
+  sensitivity: '30mA' | '100mA' | '300mA' | '500mA';
+  rccbClass: 'AC' | 'A' | 'F' | 'B' | 'A-SI';
+  selective?: boolean;
+}
+
+export interface PanelBoardConfig {
+  // Cabecera (IGA)
+  igaPoles: '2P' | '4P';
+  igaCalibre: string;        // '25' | '32' | '40' | '50' | '63' | '80' | '100' | '125' | '160' | '250'
+  igaCurve: 'B' | 'C' | 'D' | 'S';
+  igaTimeDelayMs?: 0 | 60 | 150;
+  igaBreakingCapacity: '6kA' | '10kA' | '15kA' | '25kA';
+  igaAutoSize: boolean;
+  // Sobretensiones (SPD)
+  spdIncluded: boolean;
+  spdType: 'Tipo 2 (Transitorias)' | 'Tipo 1+2 (Combinado)' | 'Combi (Permanentes + Transitorias)';
+  spdDischargeCurrent: '15kA' | '40kA' | '65kA';
+  spdVoltageLevel: '1.2 kV' | '1.5 kV' | '2.0 kV';
+  // Repartidor / Embarrado
+  includeDistributorInCAD: boolean;
+  distributorTypeOverride?: 'auto' | 'peine' | 'bloque_modular';
+  // Grupos Diferenciales
+  differentialGroups: DifferentialGroup[];
+}
+
+export const DEFAULT_PANEL_CONFIG: PanelBoardConfig = {
+  igaPoles: '4P',
+  igaCalibre: '63',
+  igaCurve: 'C',
+  igaTimeDelayMs: 0,
+  igaBreakingCapacity: '10kA',
+  igaAutoSize: true,
+  spdIncluded: true,
+  spdType: 'Combi (Permanentes + Transitorias)',
+  spdDischargeCurrent: '15kA',
+  spdVoltageLevel: '1.5 kV',
+  includeDistributorInCAD: true,
+  distributorTypeOverride: 'auto',
+  differentialGroups: [
+    {
+      id: 'ID1',
+      name: 'Alumbrado y Tomas Generales',
+      poles: '2P',
+      calibre: '40',
+      sensitivity: '30mA',
+      rccbClass: 'A',
+      selective: false
+    },
+    {
+      id: 'ID2',
+      name: 'Climatización y Fuerza / VE',
+      poles: '4P',
+      calibre: '63',
+      sensitivity: '30mA',
+      rccbClass: 'A-SI',
+      selective: false
+    }
+  ]
+};
+
 
 export interface ProjectMetadata {
   projectName: string;

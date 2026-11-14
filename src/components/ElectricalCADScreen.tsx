@@ -20,10 +20,18 @@ import {
   ArrowLeft,
   X,
   PanelLeft,
-  PanelRight
+  PanelRight,
+  Undo2,
+  Redo2,
+  ChevronDown,
+  Check,
+  Image as ImageIcon,
+  FileText,
+  Zap,
+  BookmarkCheck
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import { CircuitRecord } from '../utils/pdfExport';
+import { CircuitRecord, PanelBoardConfig, DEFAULT_PANEL_CONFIG } from '../utils/pdfExport';
 
 export type SymbolCategory = 'supply' | 'protection' | 'control' | 'load';
 
@@ -46,6 +54,7 @@ export type SymbolType =
   | 'load_hvac'
   | 'load_motor'
   | 'load_ev'
+  | 'subpanel'
   | 'text_note';
 
 export interface CADNode {
@@ -297,6 +306,177 @@ const SYMBOL_LIBRARY: SymbolDefinition[] = [
     defaultCalibre: '32A',
     defaultCurve: 'Modo 3',
     description: 'Estación de recarga de vehículo eléctrico (ITC-BT-52)'
+  },
+  {
+    type: 'subpanel',
+    name: 'Subcuadro Secundario',
+    shortTag: 'S-CUAD',
+    category: 'control',
+    defaultDesignation: 'SC1',
+    defaultPoles: '2P / 4P',
+    defaultCalibre: '32A',
+    defaultCurve: 'REBT',
+    description: 'Subcuadro de distribución secundaria o planta (ITC-BT-17/25)'
+  }
+];
+
+export interface REBTPreset {
+  code: string;
+  name: string;
+  poles: string;
+  in: string;
+  section: string;
+  loadType: SymbolType;
+  defaultPower: string;
+  powerKw: number;
+  description: string;
+  loadLabel: string;
+}
+
+export const REBT_PRESETS: REBTPreset[] = [
+  {
+    code: 'C1',
+    name: 'Iluminación',
+    poles: '1P+N',
+    in: '10A',
+    section: '1.5 mm² Cu RZ1-K',
+    loadType: 'load_light',
+    defaultPower: '2.30 kW · Máx 30 puntos',
+    powerKw: 2.3,
+    description: 'Iluminación interior general y emergencias (ITC-BT-25)',
+    loadLabel: 'Puntos de Alumbrado'
+  },
+  {
+    code: 'C2',
+    name: 'Tomas Generales',
+    poles: '1P+N',
+    in: '16A',
+    section: '2.5 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '3.68 kW · Máx 20 tomas',
+    powerKw: 3.68,
+    description: 'Bases de enchufe uso general y frigorífico (ITC-BT-25)',
+    loadLabel: 'Tomas 16A 2P+T'
+  },
+  {
+    code: 'C3',
+    name: 'Cocina y Horno',
+    poles: '2P',
+    in: '25A',
+    section: '6.0 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '5.40 kW · Placa + Horno',
+    powerKw: 5.4,
+    description: 'Cocina eléctrica, vitro/inducción y horno (ITC-BT-25)',
+    loadLabel: 'Toma Cocina / Horno 25A'
+  },
+  {
+    code: 'C4',
+    name: 'Lavadora / Termo / Lavavaj.',
+    poles: '2P',
+    in: '20A',
+    section: '4.0 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '4.60 kW · 3 tomas ded.',
+    powerKw: 4.6,
+    description: 'Lavadora, lavavajillas y calentador/termo (ITC-BT-25)',
+    loadLabel: 'Lavadora / Termo / Lavavaj.'
+  },
+  {
+    code: 'C5',
+    name: 'Tomas Baño y Cocina',
+    poles: '1P+N',
+    in: '16A',
+    section: '2.5 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '3.68 kW · Máx 6 tomas',
+    powerKw: 3.68,
+    description: 'Tomas de cuartos de baño y auxiliares de cocina (ITC-BT-25)',
+    loadLabel: 'Tomas Aux. Baño/Cocina'
+  },
+  {
+    code: 'C6',
+    name: 'Iluminación Adicional',
+    poles: '1P+N',
+    in: '10A',
+    section: '1.5 mm² Cu RZ1-K',
+    loadType: 'load_light',
+    defaultPower: '2.30 kW · Puntos extra',
+    powerKw: 2.3,
+    description: 'Circuito suplementario iluminación >30 puntos (ITC-BT-25)',
+    loadLabel: 'Alumbrado Suplementario'
+  },
+  {
+    code: 'C7',
+    name: 'Tomas Adicionales',
+    poles: '1P+N',
+    in: '16A',
+    section: '2.5 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '3.68 kW · Tomas extra',
+    powerKw: 3.68,
+    description: 'Circuito suplementario de tomas >20 puntos (ITC-BT-25)',
+    loadLabel: 'Tomas Suplementarias 16A'
+  },
+  {
+    code: 'C8',
+    name: 'Calefacción Eléctrica',
+    poles: '2P',
+    in: '25A',
+    section: '6.0 mm² Cu RZ1-K',
+    loadType: 'load_hvac',
+    defaultPower: '5.75 kW · Radiadores',
+    powerKw: 5.75,
+    description: 'Emisores térmicos y calefacción eléctrica (ITC-BT-25)',
+    loadLabel: 'Emisores Calefacción'
+  },
+  {
+    code: 'C9',
+    name: 'Aire Acondicionado / Clima',
+    poles: '2P',
+    in: '25A',
+    section: '6.0 mm² Cu RZ1-K',
+    loadType: 'load_hvac',
+    defaultPower: '5.75 kW · Aerotermia/Bomba',
+    powerKw: 5.75,
+    description: 'Equipo de climatización, aerotermia o split (ITC-BT-25)',
+    loadLabel: 'Climatización / Aerotermia'
+  },
+  {
+    code: 'C10',
+    name: 'Secadora Independiente',
+    poles: '1P+N',
+    in: '16A',
+    section: '2.5 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '3.68 kW · Toma ded.',
+    powerKw: 3.68,
+    description: 'Secadora de ropa independiente (ITC-BT-25)',
+    loadLabel: 'Toma Secadora 16A'
+  },
+  {
+    code: 'C11',
+    name: 'Domótica / Automatización',
+    poles: '1P+N',
+    in: '10A',
+    section: '1.5 mm² Cu RZ1-K',
+    loadType: 'load_socket',
+    defaultPower: '2.30 kW · Domótica',
+    powerKw: 2.3,
+    description: 'Sistema centralizado de domótica y seguridad (ITC-BT-25)',
+    loadLabel: 'Central Domótica'
+  },
+  {
+    code: 'C12',
+    name: 'Punto Recarga VE',
+    poles: '2P',
+    in: '32A',
+    section: '10.0 mm² Cu RZ1-K',
+    loadType: 'load_ev',
+    defaultPower: '7.40 kW · Modo 3 (ITC-BT-52)',
+    powerKw: 7.4,
+    description: 'Infraestructura de recarga de vehículos eléctricos (ITC-BT-52)',
+    loadLabel: 'Punto Recarga VE (SAVE)'
   }
 ];
 
@@ -317,33 +497,174 @@ function inferLoadSymbol(circuitName: string, conductors: string): SymbolType {
   return 'load_socket';
 }
 
-export function generateCADFromCircuits(circuits: CircuitRecord[]): {
+export function generateCADFromCircuits(
+  circuits: CircuitRecord[],
+  customPanelConfig?: PanelBoardConfig
+): {
   nodes: CADNode[];
   wires: CADWire[];
 } {
   const nodes: CADNode[] = [];
   const wires: CADWire[] = [];
 
-  const count = Math.max(circuits.length, 1);
-  const colSpacing = 175;
-  const startX = 140;
-  const totalWidth = Math.max((count - 1) * colSpacing, 340);
-  const centerX = startX + totalWidth / 2;
+  // Load panelConfig from parameter or localStorage fallback
+  let panelConfig: PanelBoardConfig = customPanelConfig || DEFAULT_PANEL_CONFIG;
+  if (!customPanelConfig && typeof window !== 'undefined') {
+    const savedCfg = localStorage.getItem('voltmetric_panel_config_v1');
+    if (savedCfg) {
+      try {
+        panelConfig = { ...DEFAULT_PANEL_CONFIG, ...JSON.parse(savedCfg) };
+      } catch (e) {}
+    }
+  }
 
   const maxCircuitIn = circuits.reduce((acc, c) => {
-    const val = parseFloat(c.in.replace(',', '.')) || 16;
+    const val = parseFloat((c.in || '16').replace(',', '.')) || 16;
     return Math.max(acc, val);
   }, 25);
-  const hasThreePhase = circuits.some((c) => c.conductores.includes('3F') || c.tension.startsWith('400'));
+  const sumCircuitIb = circuits.reduce((acc, c) => {
+    const val = parseFloat((c.ib || '10').replace(',', '.')) || 10;
+    return acc + val;
+  }, 0);
+
+  const hasThreePhase =
+    panelConfig.igaPoles === '4P' ||
+    circuits.some((c) => c.conductores.includes('3F') || c.tension.startsWith('400'));
   const mainPoles = hasThreePhase ? '4P' : '2P';
   const mainPhaseType: '1F+N' | '3F+N' = hasThreePhase ? '3F+N' : '1F+N';
-  const igaCalibre = maxCircuitIn >= 40 ? '63A' : '40A';
 
+  // Determine IGA calibre (either auto-sized or configured)
+  const standardCalibres = [25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 400];
+  const autoIgaVal =
+    standardCalibres.find((cal) => cal >= Math.max(maxCircuitIn, sumCircuitIb * 0.75)) || 63;
+  const igaCalibreNum = panelConfig.igaAutoSize
+    ? autoIgaVal
+    : parseInt(panelConfig.igaCalibre, 10) || autoIgaVal;
+  const igaCalibre = `${igaCalibreNum}A`;
+
+  // Group circuits by Differential Group
+  const definedGroups =
+    panelConfig.differentialGroups && panelConfig.differentialGroups.length > 0
+      ? panelConfig.differentialGroups
+      : DEFAULT_PANEL_CONFIG.differentialGroups;
+
+  const groupBuckets: {
+    group: {
+      id: string;
+      name: string;
+      poles: '2P' | '4P';
+      calibre: string;
+      sensitivity: string;
+      rccbClass: string;
+    };
+    items: { circ: CircuitRecord; origIdx: number }[];
+  }[] = definedGroups.map((g) => ({
+    group: g,
+    items: []
+  }));
+
+  const directItems: { circ: CircuitRecord; origIdx: number }[] = [];
+
+  circuits.forEach((circ, origIdx) => {
+    if (circ.grupoId === 'DIRECT') {
+      directItems.push({ circ, origIdx });
+      return;
+    }
+    if (circ.grupoId) {
+      const target = groupBuckets.find((b) => b.group.id === circ.grupoId);
+      if (target) {
+        target.items.push({ circ, origIdx });
+        return;
+      }
+    }
+    // Intelligent fallback assignment if circuit has no explicit grupoId yet
+    const isTriOrPower =
+      circ.conductores.includes('3F') ||
+      circ.tension.startsWith('400') ||
+      (parseFloat((circ.in || '16').replace(',', '.')) || 16) >= 25;
+    if (isTriOrPower && groupBuckets.length > 1) {
+      groupBuckets[1].items.push({ circ, origIdx });
+    } else {
+      groupBuckets[0].items.push({ circ, origIdx });
+    }
+  });
+
+  // Keep only non-empty buckets (or first bucket if no circuits exist)
+  const activeBuckets = groupBuckets.filter((b) => b.items.length > 0);
+  if (activeBuckets.length === 0 && directItems.length === 0) {
+    activeBuckets.push(groupBuckets[0]);
+  }
+
+  // Assign X coordinate to each circuit column, adding extra gap between differential groups
+  const colSpacing = 175;
+  const groupGap = 55;
+  const startX = 140;
+  let cursorX = startX;
+
+  const bucketPositions: {
+    bucket: (typeof activeBuckets)[0];
+    colXs: number[];
+    centerX: number;
+    minX: number;
+    maxX: number;
+  }[] = [];
+
+  activeBuckets.forEach((bucket, bIdx) => {
+    if (bIdx > 0) cursorX += groupGap;
+    const colXs: number[] = [];
+    const itemCount = Math.max(bucket.items.length, 1);
+    for (let i = 0; i < itemCount; i++) {
+      colXs.push(cursorX);
+      if (i < itemCount - 1) cursorX += colSpacing;
+    }
+    const minX = colXs[0];
+    const maxX = colXs[colXs.length - 1];
+    bucketPositions.push({
+      bucket,
+      colXs,
+      centerX: (minX + maxX) / 2,
+      minX,
+      maxX
+    });
+    cursorX += colSpacing;
+  });
+
+  const directColXs: number[] = [];
+  if (directItems.length > 0) {
+    if (bucketPositions.length > 0) cursorX += groupGap;
+    directItems.forEach((_, dIdx) => {
+      directColXs.push(cursorX);
+      if (dIdx < directItems.length - 1) cursorX += colSpacing;
+    });
+  }
+
+  const allX = [
+    ...bucketPositions.flatMap((bp) => bp.colXs),
+    ...directColXs
+  ];
+  const minCanvasX = allX.length > 0 ? Math.min(...allX) : startX;
+  const maxCanvasX = allX.length > 0 ? Math.max(...allX) : startX + 340;
+  const totalWidth = Math.max(maxCanvasX - minCanvasX, 340);
+  const centerX = minCanvasX + totalWidth / 2;
+
+  // Determine whether a Main Repartidor / Distributor Block is recommended and included
+  const hasParallelConductors = circuits.some((c) => (parseInt(c.n || '1', 10) || 1) >= 2);
+  const needsDistributor =
+    panelConfig.includeDistributorInCAD &&
+    (circuits.length >= 4 ||
+      activeBuckets.length >= 2 ||
+      directItems.length > 0 ||
+      hasParallelConductors);
+
+  const distributorCalibreNum =
+    [63, 100, 125, 160, 250, 400].find((cal) => cal >= Math.max(igaCalibreNum, 63)) || 100;
+
+  // 1. Red / Acometida
   nodes.push({
     id: 'node_supply',
     type: 'grid_supply',
     x: centerX,
-    y: 60,
+    y: 55,
     rotation: 0,
     designation: 'ACOM',
     label: hasThreePhase ? 'Red 3x400/230V 50Hz' : 'Red 230V 50Hz',
@@ -353,11 +674,12 @@ export function generateCADFromCircuits(circuits: CircuitRecord[]): {
     cableSpec: hasThreePhase ? 'DI: 4x16mm² Cu RZ1-K (AS)' : 'DI: 2x10mm² Cu RZ1-K (AS)'
   });
 
+  // 2. Contador
   nodes.push({
     id: 'node_meter',
     type: 'meter',
     x: centerX,
-    y: 140,
+    y: 130,
     rotation: 0,
     designation: 'WH1',
     label: 'Contador Telegestión',
@@ -366,72 +688,20 @@ export function generateCADFromCircuits(circuits: CircuitRecord[]): {
     curve: 'Cl. 1'
   });
 
+  // 3. IGA Cabecera
   nodes.push({
     id: 'node_iga',
     type: 'iga',
     x: centerX,
-    y: 225,
+    y: 210,
     rotation: 0,
     designation: 'IGA',
-    label: 'Interruptor General',
+    label: 'Interruptor General Automático',
     poles: mainPoles,
     calibre: igaCalibre,
-    curve: 'Curva C · 6kA'
-  });
-
-  const spdX = Math.max(60, centerX - 180);
-  nodes.push({
-    id: 'node_spd',
-    type: 'spd',
-    x: spdX,
-    y: 265,
-    rotation: 0,
-    designation: 'SPD',
-    label: 'Sobretensiones Combi',
-    poles: mainPoles,
-    calibre: '15kA (8/20)',
-    curve: 'Tipo 2 + Perm.'
-  });
-
-  nodes.push({
-    id: 'node_ground_main',
-    type: 'ground',
-    x: spdX,
-    y: 345,
-    rotation: 0,
-    designation: 'PAT',
-    label: 'Tierra General Cuadro',
-    poles: 'PE',
-    calibre: '16 mm² Cu',
-    curve: 'Ra < 37Ω'
-  });
-
-  nodes.push({
-    id: 'node_rccb',
-    type: 'rccb',
-    x: centerX,
-    y: 315,
-    rotation: 0,
-    designation: 'ID1',
-    label: 'Diferencial General',
-    poles: mainPoles,
-    calibre: igaCalibre,
-    curve: 'Clase A',
-    sensitivity: '30mA'
-  });
-
-  nodes.push({
-    id: 'node_busbar',
-    type: 'busbar',
-    x: centerX,
-    y: 390,
-    rotation: 0,
-    designation: 'EMB-1',
-    label: `Peine Distribución ${mainPoles} ${igaCalibre}`,
-    poles: mainPoles,
-    calibre: igaCalibre,
-    curve: 'Cu',
-    width: totalWidth + 80
+    curve: `Curva ${panelConfig.igaCurve || 'C'}${
+      (panelConfig.igaTimeDelayMs || 0) > 0 ? ` (Δt=${panelConfig.igaTimeDelayMs}ms)` : ''
+    } · ${panelConfig.igaBreakingCapacity || '10kA'}`
   });
 
   wires.push(
@@ -450,64 +720,251 @@ export function generateCADFromCircuits(circuits: CircuitRecord[]): {
       toNodeId: 'node_iga',
       toPort: 'top',
       phases: mainPhaseType
-    },
-    {
-      id: 'w_iga_spd',
-      fromNodeId: 'node_iga',
-      fromPort: 'bottom',
-      toNodeId: 'node_spd',
-      toPort: 'top',
-      phases: mainPhaseType
-    },
-    {
-      id: 'w_spd_gnd',
-      fromNodeId: 'node_spd',
-      fromPort: 'bottom',
-      toNodeId: 'node_ground_main',
-      toPort: 'top',
-      phases: 'CP'
-    },
-    {
-      id: 'w_iga_rccb',
-      fromNodeId: 'node_iga',
-      fromPort: 'bottom',
-      toNodeId: 'node_rccb',
-      toPort: 'top',
-      phases: mainPhaseType
-    },
-    {
-      id: 'w_rccb_busbar',
-      fromNodeId: 'node_rccb',
-      fromPort: 'bottom',
-      toNodeId: 'node_busbar',
-      toPort: 'top',
-      phases: mainPhaseType
     }
   );
 
-  circuits.forEach((circ, idx) => {
-    const colX = startX + idx * colSpacing;
+  // 4. Sobretensiones (SPD) + Tierra (PAT)
+  if (panelConfig.spdIncluded !== false) {
+    const spdX = Math.max(60, centerX - 190);
+    nodes.push({
+      id: 'node_spd',
+      type: 'spd',
+      x: spdX,
+      y: 250,
+      rotation: 0,
+      designation: 'SPD',
+      label: `Protector Sobretensiones`,
+      poles: mainPoles,
+      calibre: `${panelConfig.spdDischargeCurrent || '15kA'} (8/20)`,
+      curve: `${panelConfig.spdType || 'Tipo 2 + Perm.'} · Up≤${panelConfig.spdVoltageLevel || '1.5 kV'}`
+    });
+
+    nodes.push({
+      id: 'node_ground_main',
+      type: 'ground',
+      x: spdX,
+      y: 330,
+      rotation: 0,
+      designation: 'PAT',
+      label: 'Tierra General Cuadro',
+      poles: 'PE',
+      calibre: '16 mm² Cu',
+      curve: 'Ra < 37Ω'
+    });
+
+    wires.push(
+      {
+        id: 'w_iga_spd',
+        fromNodeId: 'node_iga',
+        fromPort: 'bottom',
+        toNodeId: 'node_spd',
+        toPort: 'top',
+        phases: mainPhaseType
+      },
+      {
+        id: 'w_spd_gnd',
+        fromNodeId: 'node_spd',
+        fromPort: 'bottom',
+        toNodeId: 'node_ground_main',
+        toPort: 'top',
+        phases: 'CP'
+      }
+    );
+  }
+
+  // 5. Repartidor General Modular (if recommended/enabled)
+  const rccbY = needsDistributor ? 375 : 310;
+  const groupBusbarY = needsDistributor ? 450 : 390;
+  const mcbY = needsDistributor ? 535 : 475;
+  const loadY = needsDistributor ? 680 : 625;
+
+  if (needsDistributor) {
+    const distLabel =
+      panelConfig.distributorTypeOverride === 'peine'
+        ? `Peine Embarrado General ${mainPoles} ${distributorCalibreNum}A`
+        : `Bloque Repartidor Modular ${mainPoles} ${distributorCalibreNum}A (UNE-EN 61439)`;
+
+    nodes.push({
+      id: 'node_distributor',
+      type: 'busbar',
+      x: centerX,
+      y: 295,
+      rotation: 0,
+      designation: 'REP-1',
+      label: distLabel,
+      poles: mainPoles,
+      calibre: `${distributorCalibreNum}A`,
+      curve: 'Barras Cu',
+      width: Math.max(totalWidth + 60, 320)
+    });
+
+    wires.push({
+      id: 'w_iga_distributor',
+      fromNodeId: 'node_iga',
+      fromPort: 'bottom',
+      toNodeId: 'node_distributor',
+      toPort: 'top',
+      phases: mainPhaseType
+    });
+  }
+
+  // 6. Grupos Diferenciales (ID1, ID2...) + Sub-embarrados + Circuitos
+  bucketPositions.forEach((bp, bIdx) => {
+    const grp = bp.bucket.group;
+    const rccbId = bIdx === 0 && bucketPositions.length === 1 ? 'node_rccb' : `node_rccb_${grp.id}`;
+    const busbarId =
+      bIdx === 0 && bucketPositions.length === 1 ? 'node_busbar' : `node_busbar_${grp.id}`;
+    const grpPhaseType: '1F+N' | '3F+N' = grp.poles === '4P' ? '3F+N' : '1F+N';
+
+    nodes.push({
+      id: rccbId,
+      type: 'rccb',
+      x: bp.centerX,
+      y: rccbY,
+      rotation: 0,
+      designation: grp.id,
+      label: grp.name || `Diferencial ${grp.id}`,
+      poles: grp.poles,
+      calibre: `${grp.calibre}A`,
+      curve: `Clase ${grp.rccbClass || 'A'}`,
+      sensitivity: grp.sensitivity || '30mA'
+    });
+
+    const spanWidth = Math.max(bp.maxX - bp.minX + 110, 180);
+    nodes.push({
+      id: busbarId,
+      type: 'busbar',
+      x: bp.centerX,
+      y: groupBusbarY,
+      rotation: 0,
+      designation: `EMB-${grp.id}`,
+      label: `Peine ${grp.id} (${grp.poles} ${grp.calibre}A)`,
+      poles: grp.poles,
+      calibre: `${grp.calibre}A`,
+      curve: 'Cu',
+      width: spanWidth
+    });
+
+    wires.push(
+      {
+        id: `w_up_${rccbId}`,
+        fromNodeId: needsDistributor ? 'node_distributor' : 'node_iga',
+        fromPort: 'bottom',
+        toNodeId: rccbId,
+        toPort: 'top',
+        phases: grpPhaseType
+      },
+      {
+        id: `w_${rccbId}_${busbarId}`,
+        fromNodeId: rccbId,
+        fromPort: 'bottom',
+        toNodeId: busbarId,
+        toPort: 'top',
+        phases: grpPhaseType
+      }
+    );
+
+    bp.bucket.items.forEach(({ circ, origIdx }, itemIdx) => {
+      const colX = bp.colXs[itemIdx];
+      const isTri = circ.conductores.includes('3F') || circ.tension.startsWith('400');
+      const phaseTag: '1F+N' | '3F+N' = isTri ? '3F+N' : '1F+N';
+      const poles = isTri ? '4P' : '1P+N';
+      const parts = circ.id.split(' - ');
+      const code = parts[0]?.trim() || `C${origIdx + 1}`;
+      const desc = parts[1]?.trim() || circ.id;
+
+      const mcbId = `node_mcb_${origIdx}`;
+      const loadId = `node_load_${origIdx}`;
+
+      const protSymbol: SymbolType =
+        circ.tipoProteccion === 'Fusible gG'
+          ? 'fuse'
+          : circ.tipoProteccion === 'Guardamotor'
+          ? 'motor_breaker'
+          : 'mcb';
+
+      nodes.push({
+        id: mcbId,
+        type: protSymbol,
+        x: colX,
+        y: mcbY,
+        rotation: 0,
+        designation: code,
+        label: desc,
+        poles,
+        calibre: `${circ.in}A`,
+        curve: `Curva ${circ.curva || 'C'} · ${circ.poderCorte || '6kA'}`,
+        cableSpec: `${circ.conductores} ${circ.seccion} (${circ.aisl})`,
+        powerSpec: `${circ.carga}${circ.ud} · L=${circ.l}m · ΔU=${circ.deltaU}%`
+      });
+
+      const loadSymbol = inferLoadSymbol(circ.id, circ.conductores);
+      nodes.push({
+        id: loadId,
+        type: loadSymbol,
+        x: colX,
+        y: loadY,
+        rotation: 0,
+        designation: `R-${code}`,
+        label: desc,
+        poles: circ.conductores,
+        calibre: `${circ.ib}A`,
+        curve: `${circ.tension}V`,
+        cableSpec: `Método ${circ.metodo} · Iz=${circ.iz}A`,
+        powerSpec: `P=${circ.carga}${circ.ud} · ΔU=${circ.deltaU}%`
+      });
+
+      wires.push(
+        {
+          id: `w_bus_mcb_${origIdx}`,
+          fromNodeId: busbarId,
+          fromPort: 'bottom',
+          toNodeId: mcbId,
+          toPort: 'top',
+          phases: phaseTag
+        },
+        {
+          id: `w_mcb_load_${origIdx}`,
+          fromNodeId: mcbId,
+          fromPort: 'bottom',
+          toNodeId: loadId,
+          toPort: 'top',
+          phases: phaseTag,
+          label: `${circ.seccion} ${circ.conductores.includes('Al') ? 'Al' : 'Cu'} ${circ.aisl}`
+        }
+      );
+    });
+  });
+
+  // 7. Circuitos Directos al Repartidor (sin diferencial intermedio o con diferencial propio)
+  directItems.forEach(({ circ, origIdx }, dIdx) => {
+    const colX = directColXs[dIdx];
     const isTri = circ.conductores.includes('3F') || circ.tension.startsWith('400');
     const phaseTag: '1F+N' | '3F+N' = isTri ? '3F+N' : '1F+N';
     const poles = isTri ? '4P' : '1P+N';
     const parts = circ.id.split(' - ');
-    const code = parts[0]?.trim() || `C${idx + 1}`;
+    const code = parts[0]?.trim() || `C${origIdx + 1}`;
     const desc = parts[1]?.trim() || circ.id;
 
-    const mcbId = `node_mcb_${idx}`;
-    const loadId = `node_load_${idx}`;
+    const mcbId = `node_mcb_${origIdx}`;
+    const loadId = `node_load_${origIdx}`;
 
     nodes.push({
       id: mcbId,
-      type: 'mcb',
+      type:
+        circ.tipoProteccion === 'Fusible gG'
+          ? 'fuse'
+          : circ.tipoProteccion === 'Guardamotor'
+          ? 'motor_breaker'
+          : 'mcb',
       x: colX,
-      y: 475,
+      y: mcbY,
       rotation: 0,
       designation: code,
       label: desc,
       poles,
       calibre: `${circ.in}A`,
-      curve: 'Curva C · 6kA',
+      curve: `Curva ${circ.curva || 'C'} · ${circ.poderCorte || '6kA'}`,
       cableSpec: `${circ.conductores} ${circ.seccion} (${circ.aisl})`,
       powerSpec: `${circ.carga}${circ.ud} · L=${circ.l}m · ΔU=${circ.deltaU}%`
     });
@@ -517,7 +974,7 @@ export function generateCADFromCircuits(circuits: CircuitRecord[]): {
       id: loadId,
       type: loadSymbol,
       x: colX,
-      y: 625,
+      y: loadY,
       rotation: 0,
       designation: `R-${code}`,
       label: desc,
@@ -530,21 +987,21 @@ export function generateCADFromCircuits(circuits: CircuitRecord[]): {
 
     wires.push(
       {
-        id: `w_bus_mcb_${idx}`,
-        fromNodeId: 'node_busbar',
+        id: `w_bus_mcb_${origIdx}`,
+        fromNodeId: needsDistributor ? 'node_distributor' : 'node_iga',
         fromPort: 'bottom',
         toNodeId: mcbId,
         toPort: 'top',
         phases: phaseTag
       },
       {
-        id: `w_mcb_load_${idx}`,
+        id: `w_mcb_load_${origIdx}`,
         fromNodeId: mcbId,
         fromPort: 'bottom',
         toNodeId: loadId,
         toPort: 'top',
         phases: phaseTag,
-        label: `${circ.seccion} Cu ${circ.aisl}`
+        label: `${circ.seccion} ${circ.conductores.includes('Al') ? 'Al' : 'Cu'} ${circ.aisl}`
       }
     );
   });
@@ -639,6 +1096,90 @@ export function ElectricalCADScreen({
     centerCanvasY: number;
   } | null>(null);
 
+  // Undo / Redo History Stack (up to 30 snapshots)
+  const [history, setHistory] = useState<{ nodes: CADNode[]; wires: CADWire[] }[]>(() => [
+    { nodes, wires }
+  ]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  const pushHistory = useCallback(
+    (newNodes: CADNode[], newWires: CADWire[]) => {
+      setHistory((prev) => {
+        const trimmed = prev.slice(0, historyIndex + 1);
+        const next = [...trimmed, { nodes: newNodes, wires: newWires }];
+        return next.slice(-30);
+      });
+      setHistoryIndex((prev) => Math.min(prev + 1, 29));
+    },
+    [historyIndex]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevStep = history[historyIndex - 1];
+      setHistoryIndex((i) => i - 1);
+      setNodes(prevStep.nodes);
+      setWires(prevStep.wires);
+      setSelectedNodeId(null);
+      setSelectedWireId(null);
+      onShowToast('Acción deshecha (Deshacer)');
+    }
+  }, [history, historyIndex, onShowToast]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextStep = history[historyIndex + 1];
+      setHistoryIndex((i) => i + 1);
+      setNodes(nextStep.nodes);
+      setWires(nextStep.wires);
+      setSelectedNodeId(null);
+      setSelectedWireId(null);
+      onShowToast('Acción recuperada (Rehacer)');
+    }
+  }, [history, historyIndex, onShowToast]);
+
+  // Unified Export Dropdown & REBT Presets Menu States
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
+  const [isPresetsOpen, setIsPresetsOpen] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const presetsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Global Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Click outside listener for dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+      if (presetsMenuRef.current && !presetsMenuRef.current.contains(e.target as Node)) {
+        setIsPresetsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('voltmetric_cad_nodes_v1', JSON.stringify(nodes));
   }, [nodes]);
@@ -650,6 +1191,38 @@ export function ElectricalCADScreen({
   useEffect(() => {
     localStorage.setItem('voltmetric_cad_titleblock', JSON.stringify(titleBlock));
   }, [titleBlock]);
+
+  // Cuadro Resumen y Balance de Potencias REBT (ITC-BT-10 / ITC-BT-25)
+  const summaryMetrics = useMemo(() => {
+    const mcbNodes = nodes.filter((n) => n.type === 'mcb');
+    let totalPinstKw = 0;
+    mcbNodes.forEach((n) => {
+      const match = n.powerSpec?.match(/([\d.,]+)\s*kW/i);
+      if (match) {
+        totalPinstKw += parseFloat(match[1].replace(',', '.')) || 0;
+      } else {
+        const cal = parseFloat(n.calibre.replace('A', '').replace(',', '.')) || 16;
+        totalPinstKw += (cal * 230) / 1000;
+      }
+    });
+
+    const count = mcbNodes.length;
+    let fs = 1.0;
+    if (count >= 10) fs = 0.65;
+    else if (count >= 6) fs = 0.75;
+    else if (count >= 4) fs = 0.85;
+
+    const pSimultKw = +(totalPinstKw * fs).toFixed(2);
+    const iCalc = Math.round((pSimultKw * 1000) / 230);
+
+    return {
+      circuitCount: count,
+      totalPinstKw: +totalPinstKw.toFixed(2),
+      simultaneityFactor: fs,
+      simultaneousPowerKw: pSimultKw,
+      estimatedCurrentA: iCalc
+    };
+  }, [nodes]);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) || null,
@@ -733,6 +1306,7 @@ export function ElectricalCADScreen({
     const generated = generateCADFromCircuits(circuits);
     setNodes(generated.nodes);
     setWires(generated.wires);
+    pushHistory(generated.nodes, generated.wires);
     setSelectedNodeId(null);
     setSelectedWireId(null);
     setTimeout(() => fitToScreen(generated.nodes), 50);
@@ -769,7 +1343,9 @@ export function ElectricalCADScreen({
       width: def.type === 'busbar' ? 360 : undefined
     };
 
-    setNodes((prev) => [...prev, newNode]);
+    const nextNodes = [...nodes, newNode];
+    setNodes(nextNodes);
+    pushHistory(nextNodes, wires);
     setSelectedNodeId(newId);
     setSelectedWireId(null);
     setTool('select');
@@ -780,16 +1356,116 @@ export function ElectricalCADScreen({
     onShowToast(`Símbolo insertado: ${def.name}`);
   };
 
+  // Insert complete REBT ITC-BT-25 Standard Circuit (C1 - C12)
+  const handleInsertREBTPreset = (preset: REBTPreset) => {
+    let busbar = nodes.find((n) => n.type === 'busbar');
+    let nextNodes = [...nodes];
+    let nextWires = [...wires];
+
+    // Find the rightmost MCB/subpanel column X
+    const branchNodes = nextNodes.filter((n) => n.type === 'mcb' || n.type === 'subpanel');
+    let targetX = 140;
+    if (branchNodes.length > 0) {
+      const maxX = Math.max(...branchNodes.map((b) => b.x));
+      targetX = maxX + 175;
+    } else if (busbar) {
+      targetX = busbar.x - (busbar.width || 360) / 2 + 70;
+    }
+
+    // Expand busbar if branch extends beyond its right edge
+    if (busbar) {
+      const halfW = (busbar.width || 360) / 2;
+      const rightEdge = busbar.x + halfW;
+      if (targetX + 60 > rightEdge) {
+        const requiredWidth = Math.max(busbar.width || 360, (targetX - busbar.x + 80) * 2);
+        nextNodes = nextNodes.map((n) =>
+          n.id === busbar!.id ? { ...n, width: requiredWidth } : n
+        );
+        busbar = nextNodes.find((n) => n.type === 'busbar');
+      }
+    }
+
+    const uniqueId = `${preset.code}_${Date.now().toString().slice(-4)}`;
+    const mcbId = `node_mcb_${uniqueId}`;
+    const loadId = `node_load_${uniqueId}`;
+
+    const newMcb: CADNode = {
+      id: mcbId,
+      type: 'mcb',
+      x: targetX,
+      y: 475,
+      rotation: 0,
+      designation: preset.code,
+      label: preset.name,
+      poles: preset.poles,
+      calibre: preset.in,
+      curve: 'Curva C · 6kA',
+      cableSpec: preset.section,
+      powerSpec: preset.defaultPower
+    };
+
+    const newLoad: CADNode = {
+      id: loadId,
+      type: preset.loadType,
+      x: targetX,
+      y: 625,
+      rotation: 0,
+      designation: `R-${preset.code}`,
+      label: preset.loadLabel,
+      poles: preset.poles,
+      calibre: preset.in,
+      curve: '230V 50Hz',
+      cableSpec: `ITC-BT-25 · ${preset.section}`,
+      powerSpec: preset.defaultPower
+    };
+
+    nextNodes.push(newMcb, newLoad);
+
+    if (busbar) {
+      nextWires.push({
+        id: `w_bus_${mcbId}`,
+        fromNodeId: busbar.id,
+        fromPort: 'bottom',
+        toNodeId: mcbId,
+        toPort: 'top',
+        phases: preset.poles.includes('3F') ? '3F+N' : '1F+N'
+      });
+    }
+
+    nextWires.push({
+      id: `w_${mcbId}_${loadId}`,
+      fromNodeId: mcbId,
+      fromPort: 'bottom',
+      toNodeId: loadId,
+      toPort: 'top',
+      phases: preset.poles.includes('3F') ? '3F+N' : '1F+N',
+      label: preset.section
+    });
+
+    setNodes(nextNodes);
+    setWires(nextWires);
+    pushHistory(nextNodes, nextWires);
+    setSelectedNodeId(mcbId);
+    setSelectedWireId(null);
+    setIsPresetsOpen(false);
+    onShowToast(`Circuito ${preset.code} (${preset.name}) insertado según ITC-BT-25`);
+  };
+
   const handleDeleteSelected = () => {
     if (selectedNodeId) {
-      setNodes((prev) => prev.filter((n) => n.id !== selectedNodeId));
-      setWires((prev) =>
-        prev.filter((w) => w.fromNodeId !== selectedNodeId && w.toNodeId !== selectedNodeId)
+      const nextNodes = nodes.filter((n) => n.id !== selectedNodeId);
+      const nextWires = wires.filter(
+        (w) => w.fromNodeId !== selectedNodeId && w.toNodeId !== selectedNodeId
       );
+      setNodes(nextNodes);
+      setWires(nextWires);
+      pushHistory(nextNodes, nextWires);
       setSelectedNodeId(null);
       onShowToast('Elemento eliminado del plano');
     } else if (selectedWireId) {
-      setWires((prev) => prev.filter((w) => w.id !== selectedWireId));
+      const nextWires = wires.filter((w) => w.id !== selectedWireId);
+      setWires(nextWires);
+      pushHistory(nodes, nextWires);
       setSelectedWireId(null);
       onShowToast('Conexión eliminada');
     }
@@ -805,18 +1481,20 @@ export function ElectricalCADScreen({
       y: selectedNode.y + 20,
       designation: `${selectedNode.designation}-B`
     };
-    setNodes((prev) => [...prev, duplicated]);
+    const nextNodes = [...nodes, duplicated];
+    setNodes(nextNodes);
+    pushHistory(nextNodes, wires);
     setSelectedNodeId(copyId);
     onShowToast('Componente duplicado');
   };
 
   const handleRotateSelected = () => {
     if (!selectedNode) return;
-    setNodes((prev) =>
-      prev.map((n) =>
-        n.id === selectedNode.id ? { ...n, rotation: (n.rotation + 90) % 360 } : n
-      )
+    const nextNodes = nodes.map((n) =>
+      n.id === selectedNode.id ? { ...n, rotation: (n.rotation + 90) % 360 } : n
     );
+    setNodes(nextNodes);
+    pushHistory(nextNodes, wires);
   };
 
   const updateSelectedNode = (patch: Partial<CADNode>) => {
@@ -846,7 +1524,9 @@ export function ElectricalCADScreen({
         toPort: port,
         phases: '1F+N'
       };
-      setWires((prev) => [...prev, newWire]);
+      const nextWires = [...wires, newWire];
+      setWires(nextWires);
+      pushHistory(nodes, nextWires);
       setWireStart(null);
       setTool('select');
       onShowToast('Línea eléctrica conectada');
@@ -907,6 +1587,9 @@ export function ElectricalCADScreen({
   };
 
   const handleCanvasMouseUp = () => {
+    if (draggingNodeId) {
+      pushHistory(nodes, wires);
+    }
     setDraggingNodeId(null);
     setIsPanning(false);
   };
@@ -1024,6 +1707,9 @@ export function ElectricalCADScreen({
   };
 
   const handleTouchEnd = () => {
+    if (draggingNodeId) {
+      pushHistory(nodes, wires);
+    }
     pinchStateRef.current = null;
     setDraggingNodeId(null);
     setIsPanning(false);
@@ -1170,6 +1856,7 @@ export function ElectricalCADScreen({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
     onShowToast('Archivo AutoCAD (.DXF) exportado con capas IEC');
   };
 
@@ -1187,7 +1874,38 @@ export function ElectricalCADScreen({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
     onShowToast('Plano vectorial (.SVG) descargado correctamente');
+  };
+
+  // Export High Resolution PNG (2400 x 1600 raster)
+  const handleExportPNG = () => {
+    if (!svgRef.current) return;
+    const serializer = new XMLSerializer();
+    const svgStr = serializer.serializeToString(svgRef.current);
+    const canvas = document.createElement('canvas');
+    canvas.width = 2400;
+    canvas.height = 1600;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = new Image();
+    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    img.onload = () => {
+      ctx.fillStyle = blueprintDark ? '#0B1120' : '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const a = document.createElement('a');
+      a.download = `Plano_Unifilar_${titleBlock.drawingCode}.png`;
+      a.href = canvas.toDataURL('image/png');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setIsExportMenuOpen(false);
+      onShowToast('Imagen en Alta Resolución (.PNG) exportada');
+    };
+    img.src = url;
   };
 
   // Export Normative Landscape PDF (Plano Técnico A3 con Cajetín REBT)
@@ -1305,6 +2023,40 @@ export function ElectricalCADScreen({
       }
     });
 
+    // Cuadro de Resumen de Potencia y Cargas (ITC-BT-10 / 25)
+    const sumW = 125;
+    const sumH = 36;
+    const sumX = 14;
+    const sumY = pageH - 12 - sumH;
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.5);
+    doc.rect(sumX, sumY, sumW, sumH, 'FD');
+
+    doc.setLineWidth(0.25);
+    doc.line(sumX, sumY + 9, sumX + sumW, sumY + 9);
+    doc.line(sumX + 62, sumY + 9, sumX + 62, sumY + sumH);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text('BALANCE DE POTENCIA Y CARGAS (REBT ITC-BT-10/25)', sumX + 3, sumY + 6);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Total Circuitos: ${summaryMetrics.circuitCount} líneas`, sumX + 3, sumY + 16);
+    doc.text(`Potencia Instalada: ${summaryMetrics.totalPinstKw.toFixed(2)} kW`, sumX + 3, sumY + 23);
+    doc.text(`Factor Simultaneidad (Fs): ${summaryMetrics.simultaneityFactor}`, sumX + 3, sumY + 30);
+
+    doc.text(`Potencia de Cálculo: ${summaryMetrics.simultaneousPowerKw.toFixed(2)} kW`, sumX + 65, sumY + 16);
+    doc.text(`Intensidad Prevista (Ib): ~${summaryMetrics.estimatedCurrentA} A`, sumX + 65, sumY + 23);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(37, 99, 235);
+    doc.text('Acometida y Protecciones Conformes', sumX + 65, sumY + 30);
+
+    // Cajetín Oficial REBT
     const tbW = 165;
     const tbH = 36;
     const tbX = pageW - 12 - tbW;
@@ -1349,6 +2101,7 @@ export function ElectricalCADScreen({
     doc.text('VoltMetric Pro CAD', tbX + 114, tbY + 33.5);
 
     doc.save(`Plano_Unifilar_${titleBlock.drawingCode}.pdf`);
+    setIsExportMenuOpen(false);
     onShowToast('Plano Técnico A3 con Cajetín REBT exportado en PDF');
   };
 
@@ -1890,9 +2643,92 @@ export function ElectricalCADScreen({
               {blueprintDark ? 'CAD' : 'Papel'}
             </button>
           </div>
+
+          {/* Undo / Redo Actions */}
+          <div className="flex items-center bg-surface-container-low p-0.5 rounded-lg border border-outline-variant/25 shrink-0">
+            <button
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+              className={`p-1.5 rounded-md text-xs font-bold transition-all ${
+                historyIndex > 0
+                  ? 'text-on-surface hover:bg-surface-container-high cursor-pointer'
+                  : 'text-outline/40 cursor-not-allowed'
+              }`}
+              title="Deshacer última acción (Ctrl+Z)"
+            >
+              <Undo2 size={13} />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+              className={`p-1.5 rounded-md text-xs font-bold transition-all ${
+                historyIndex < history.length - 1
+                  ? 'text-on-surface hover:bg-surface-container-high cursor-pointer'
+                  : 'text-outline/40 cursor-not-allowed'
+              }`}
+              title="Rehacer acción (Ctrl+Y)"
+            >
+              <Redo2 size={13} />
+            </button>
+          </div>
+
+          {/* Presets REBT ITC-BT-25 Quick Inserter */}
+          <div className="relative shrink-0" ref={presetsMenuRef}>
+            <button
+              onClick={() => setIsPresetsOpen((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border shrink-0 ${
+                isPresetsOpen
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                  : 'bg-surface-container-low hover:bg-surface-container-high text-on-surface border-outline-variant/30'
+              }`}
+              title="Insertar circuito normalizado REBT ITC-BT-25 (C1 a C12)"
+            >
+              <Zap size={13} className={isPresetsOpen ? 'text-white' : 'text-amber-500'} />
+              <span className="hidden sm:inline">Presets</span> REBT
+              <ChevronDown
+                size={12}
+                className={`transition-transform duration-200 ${isPresetsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {isPresetsOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-surface-container-lowest rounded-xl border border-outline-variant/30 shadow-2xl p-2 z-50 max-h-[70vh] overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-outline-variant/20 mb-1 flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-primary">
+                    Circuitos REBT (ITC-BT-25)
+                  </span>
+                  <span className="text-[10px] text-on-surface-variant font-mono">12 tipos</span>
+                </div>
+                <div className="space-y-1">
+                  {REBT_PRESETS.map((preset) => (
+                    <button
+                      key={preset.code}
+                      onClick={() => handleInsertREBTPreset(preset)}
+                      className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-high text-left cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-8 h-6 rounded bg-primary/10 text-primary font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                          {preset.code}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-on-surface truncate group-hover:text-primary">
+                            {preset.name}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant truncate">
+                            {preset.in} · {preset.section}
+                          </p>
+                        </div>
+                      </div>
+                      <Plus size={14} className="text-primary shrink-0 opacity-60 group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right Actions: Auto-Generate, Inspector Toggle & Exports */}
+        {/* Right Actions: Auto-Generate, Inspector Toggle & Consolidated Export */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={handleSyncFromProject}
@@ -1900,7 +2736,7 @@ export function ElectricalCADScreen({
             title="Autogenerar Esquema Unifilar desde los circuitos del proyecto"
           >
             <Sparkles size={13} />
-            <span>Autogenerar ({circuits.length})</span>
+            <span className="hidden sm:inline">Autogenerar</span> ({circuits.length})
           </button>
 
           <button
@@ -1916,33 +2752,102 @@ export function ElectricalCADScreen({
             title="Abrir Propiedades del Componente o Cajetín REBT"
           >
             <PanelRight size={14} />
-            <span>{selectedNode ? `Editar ${selectedNode.designation}` : 'Cajetín / Prop.'}</span>
+            <span className="hidden sm:inline">{selectedNode ? `Editar ${selectedNode.designation}` : 'Cajetín / Prop.'}</span>
           </button>
 
-          <button
-            onClick={handleExportDXF}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container-high text-on-surface border border-outline-variant/30 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0"
-            title="Exportar a AutoCAD (.DXF)"
-          >
-            <FileCode size={13} className="text-amber-600" />
-            <span>DXF</span>
-          </button>
-          <button
-            onClick={handleExportSVG}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container-high text-on-surface border border-outline-variant/30 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0"
-            title="Exportar Vectorial (.SVG)"
-          >
-            <Layers size={13} className="text-sky-600" />
-            <span>SVG</span>
-          </button>
-          <button
-            onClick={handleExportCADPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95 shrink-0"
-            title="Exportar Plano Técnico A3 en PDF"
-          >
-            <Download size={13} />
-            <span>PDF A3</span>
-          </button>
+          {/* Unified Export Button with Dropdown Selector */}
+          <div className="relative shrink-0" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95 shrink-0"
+              title="Descargar Plano Eléctrico en Diferentes Formatos"
+            >
+              <Download size={13} />
+              <span>Exportar Plano</span>
+              <ChevronDown
+                size={12}
+                className={`transition-transform duration-200 ${isExportMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-64 bg-surface-container-lowest rounded-xl border border-outline-variant/30 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-2.5 py-1.5 border-b border-outline-variant/15 mb-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-primary font-bold">
+                    Seleccionar Formato
+                  </span>
+                </div>
+
+                <button
+                  onClick={handleExportCADPdf}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-surface-container text-left cursor-pointer transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-red-500/10 text-red-600 flex items-center justify-center shrink-0 font-bold text-xs">
+                    PDF
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-on-surface group-hover:text-primary">
+                      Plano Técnico A3 (PDF)
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant truncate">
+                      Con cajetín oficial REBT y balance
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportDXF}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-surface-container text-left cursor-pointer transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                    <FileCode size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-on-surface group-hover:text-primary">
+                      AutoCAD (.DXF)
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant truncate">
+                      Capas normalizadas (AutoCAD / LibreCAD)
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportSVG}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-surface-container text-left cursor-pointer transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0">
+                    <Layers size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-on-surface group-hover:text-primary">
+                      Vectorial (.SVG)
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant truncate">
+                      Escalable sin pérdida para planos
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportPNG}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-surface-container text-left cursor-pointer transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                    <ImageIcon size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-on-surface group-hover:text-primary">
+                      Imagen HD (.PNG)
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant truncate">
+                      Alta resolución para informes y WhatsApp
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2376,6 +3281,84 @@ export function ElectricalCADScreen({
                 );
               })}
 
+              {/* Cuadro Resumen y Balance de Potencias REBT (ITC-BT-10 / 25) */}
+              <g transform="translate(28, 675)">
+                <rect
+                  x={0}
+                  y={0}
+                  width={460}
+                  height={97}
+                  fill={theme.nodeFill}
+                  stroke={theme.strokeMain}
+                  strokeWidth={1.5}
+                />
+                <line x1={0} y1={28} x2={460} y2={28} stroke={theme.strokeMain} strokeWidth={1} />
+                <line x1={230} y1={28} x2={230} y2={97} stroke={theme.strokeMain} strokeWidth={1} />
+
+                <text
+                  x={12}
+                  y={18}
+                  fill={theme.textPrimary}
+                  fontSize={10.5}
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                >
+                  BALANCE DE POTENCIA Y CARGAS PREVISTAS (REBT)
+                </text>
+                <text
+                  x={448}
+                  y={18}
+                  textAnchor="end"
+                  fill={theme.strokeAccent}
+                  fontSize={9.5}
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                >
+                  ITC-BT-10 / 25
+                </text>
+
+                <text x={12} y={44} fill={theme.textSecondary} fontSize={9.5}>
+                  Líneas Derivadas:{' '}
+                  <tspan fill={theme.textPrimary} fontWeight="bold">
+                    {summaryMetrics.circuitCount} circuitos
+                  </tspan>
+                </text>
+                <text x={12} y={58} fill={theme.textSecondary} fontSize={9.5}>
+                  Potencia Total Instalada:{' '}
+                  <tspan fill={theme.textPrimary} fontWeight="bold">
+                    {summaryMetrics.totalPinstKw.toFixed(2)} kW
+                  </tspan>
+                </text>
+                <text x={12} y={72} fill={theme.textSecondary} fontSize={9.5}>
+                  Factor de Simultaneidad (Fs):{' '}
+                  <tspan fill={theme.strokeAccent} fontWeight="bold">
+                    {summaryMetrics.simultaneityFactor}
+                  </tspan>
+                </text>
+                <text x={12} y={88} fill={theme.textSecondary} fontSize={8.5} fontFamily="monospace">
+                  Tensión Suministro: 230V 1F+N / 400V 3F+N
+                </text>
+
+                <text x={242} y={44} fill={theme.textSecondary} fontSize={9.5}>
+                  Potencia de Cálculo:{' '}
+                  <tspan fill={theme.strokeAccent} fontWeight="bold">
+                    {summaryMetrics.simultaneousPowerKw.toFixed(2)} kW
+                  </tspan>
+                </text>
+                <text x={242} y={58} fill={theme.textSecondary} fontSize={9.5}>
+                  Intensidad Prevista (Ib):{' '}
+                  <tspan fill={theme.textPrimary} fontWeight="bold">
+                    ~{summaryMetrics.estimatedCurrentA} A
+                  </tspan>
+                </text>
+                <text x={242} y={72} fill={theme.strokeGround} fontSize={9.5} fontWeight="bold">
+                  ✓ Protecciones e IGA Conformes
+                </text>
+                <text x={242} y={88} fill={theme.textSecondary} fontSize={8.5} fontFamily="monospace">
+                  Límite Reglamentario: ΔU &lt; 3%
+                </text>
+              </g>
+
               {/* Normative REBT / UNE Title Block in Bottom-Right of Sheet */}
               <g
                 transform="translate(740, 675)"
@@ -2548,7 +3531,7 @@ export function ElectricalCADScreen({
   );
 }
 
-// --- IEC 60617 Standard Vector Symbol Renderer ---
+// --- IEC 60617 / UNE-EN 60617 Standard Vector Symbol Renderer ---
 function IECSymbolGraphic({
   node,
   theme
@@ -2569,6 +3552,7 @@ function IECSymbolGraphic({
       const w = node.width || 360;
       return (
         <g>
+          {/* Main distribution busbar rectangle */}
           <rect
             x={-w / 2}
             y={-4}
@@ -2579,6 +3563,9 @@ function IECSymbolGraphic({
             stroke={theme.strokeMain}
             strokeWidth={1.2}
           />
+          {/* Phase markings dots along busbar */}
+          <circle cx={-w / 2 + 12} cy={0} r={2} fill={theme.nodeFill} />
+          <circle cx={w / 2 - 12} cy={0} r={2} fill={theme.nodeFill} />
         </g>
       );
     }
@@ -2586,6 +3573,9 @@ function IECSymbolGraphic({
     case 'grid_supply':
       return (
         <g>
+          {/* Top connection / aerial feeder */}
+          <line x1={0} y1={-28} x2={0} y2={-18} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Generator / Network circle */}
           <circle
             cx={0}
             cy={0}
@@ -2594,12 +3584,14 @@ function IECSymbolGraphic({
             stroke={theme.strokeAccent}
             strokeWidth={2}
           />
+          {/* Sine wave 50Hz symbol */}
           <path
-            d="M -10 0 Q -5 -8 0 0 T 10 0"
+            d="M -10 0 Q -5 -9 0 0 T 10 0"
             fill="none"
             stroke={theme.strokeAccent}
-            strokeWidth={2}
+            strokeWidth={2.2}
           />
+          {/* Output conductor to downstream */}
           <line x1={0} y1={18} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
         </g>
       );
@@ -2608,22 +3600,38 @@ function IECSymbolGraphic({
       return (
         <g>
           <line x1={0} y1={-28} x2={0} y2={-18} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Meter Enclosure */}
           <rect
             x={-18}
             y={-18}
             width={36}
             height={36}
-            rx={4}
+            rx={3}
             fill={theme.nodeFill}
             stroke={theme.strokeMain}
             strokeWidth={1.8}
           />
+          {/* Internal counting register window */}
+          <rect
+            x={-12}
+            y={-13}
+            width={24}
+            height={10}
+            rx={1.5}
+            fill="none"
+            stroke={theme.strokeAccent}
+            strokeWidth={1.2}
+          />
+          <line x1={-6} y1={-13} x2={-6} y2={-3} stroke={theme.strokeAccent} strokeWidth={1} />
+          <line x1={0} y1={-13} x2={0} y2={-3} stroke={theme.strokeAccent} strokeWidth={1} />
+          <line x1={6} y1={-13} x2={6} y2={-3} stroke={theme.strokeAccent} strokeWidth={1} />
+          {/* kWh active energy tag */}
           <text
             x={0}
-            y={4}
+            y={9}
             textAnchor="middle"
             fill={theme.strokeAccent}
-            fontSize={10}
+            fontSize={9.5}
             fontWeight="bold"
             fontFamily="monospace"
           >
@@ -2633,43 +3641,12 @@ function IECSymbolGraphic({
         </g>
       );
 
-    case 'icp':
     case 'iga':
-    case 'mcb':
-    case 'motor_breaker':
       return (
         <g>
-          <line x1={0} y1={-28} x2={0} y2={-14} stroke={theme.strokeMain} strokeWidth={1.8} />
-          <rect
-            x={-16}
-            y={-18}
-            width={32}
-            height={36}
-            rx={3}
-            fill={theme.nodeFill}
-            stroke={node.type === 'iga' ? theme.strokeAccent : theme.strokeProtection}
-            strokeWidth={1.8}
-          />
-          <line x1={-3.5} y1={-15.5} x2={3.5} y2={-8.5} stroke={theme.strokeMain} strokeWidth={1.6} />
-          <line x1={3.5} y1={-15.5} x2={-3.5} y2={-8.5} stroke={theme.strokeMain} strokeWidth={1.6} />
-          <line x1={0} y1={12} x2={-9} y2={-10} stroke={theme.strokeAccent} strokeWidth={2} />
-          <rect
-            x={-9}
-            y={-3}
-            width={5}
-            height={6}
-            fill="none"
-            stroke={theme.strokeMain}
-            strokeWidth={1.2}
-          />
-          <line x1={0} y1={12} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
-        </g>
-      );
-
-    case 'rccb':
-      return (
-        <g>
-          <line x1={0} y1={-28} x2={0} y2={-14} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Incoming terminal */}
+          <line x1={0} y1={-28} x2={0} y2={-15} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Background Technical Enclosure */}
           <rect
             x={-18}
             y={-18}
@@ -2680,69 +3657,247 @@ function IECSymbolGraphic({
             stroke={theme.strokeAccent}
             strokeWidth={1.8}
           />
+          {/* Switch-Disconnector Cross pad (Aptitud al seccionamiento UNE-EN 60947-2) */}
+          <line x1={-3.5} y1={-15} x2={3.5} y2={-9} stroke={theme.strokeMain} strokeWidth={1.6} />
+          <line x1={3.5} y1={-15} x2={-3.5} y2={-9} stroke={theme.strokeMain} strokeWidth={1.6} />
+          {/* Main switch blade */}
+          <line x1={0} y1={10} x2={-10} y2={-9} stroke={theme.strokeAccent} strokeWidth={2.2} />
+          {/* Disparador Térmico Bimetálico (Curva / U-Bracket) */}
+          <path
+            d="M -10 -1 L -6 -1 L -6 -6 L -10 -6"
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1.4}
+          />
+          {/* Disparador Magnético Instantáneo (Flecha / Bobina de disparo) */}
+          <path
+            d="M -9 4 L -5 4 L -5 1"
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1.4}
+          />
+          <polygon points="-7,1 -3,1 -5,-2" fill={theme.strokeMain} />
+          {/* Mechanism dashed linkage */}
+          <line x1={-6} y1={-1} x2={-4} y2={2} stroke={theme.strokeAccent} strokeWidth={1} strokeDasharray="1.5,1.5" />
+          {/* Outgoing terminal */}
+          <line x1={0} y1={10} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+        </g>
+      );
+
+    case 'icp':
+    case 'mcb':
+      return (
+        <g>
+          {/* Incoming terminal */}
+          <line x1={0} y1={-28} x2={0} y2={-14} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Breaker Enclosure */}
+          <rect
+            x={-17}
+            y={-18}
+            width={34}
+            height={36}
+            rx={3}
+            fill={theme.nodeFill}
+            stroke={theme.strokeProtection}
+            strokeWidth={1.8}
+          />
+          {/* Fixed contact pad */}
+          <circle cx={0} cy={-13} r={1.8} fill={theme.strokeMain} />
+          {/* Movable Contact Arm (Automatic Breaker) */}
+          <line x1={0} y1={10} x2={-9} y2={-11} stroke={theme.strokeProtection} strokeWidth={2.2} />
+          {/* Disparador Térmico Bimetálico (Sobrecarga ITC-BT-22) */}
+          <path
+            d="M -9 -1 L -5 -1 L -5 -6 L -9 -6"
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1.4}
+          />
+          {/* Disparador Magnético (Cortocircuito ITC-BT-22) */}
+          <path
+            d="M -9 5 L -5 5 L -5 2"
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1.4}
+          />
+          <polygon points="-7,2 -3,2 -5,-1" fill={theme.strokeMain} />
+          {/* Mechanical actuator toggle / latch */}
+          <line x1={-6} y1={-1} x2={-3} y2={1} stroke={theme.strokeAccent} strokeWidth={1} strokeDasharray="1.5,1.5" />
+          <circle cx={-12} cy={-1} r={2} fill={theme.strokeProtection} />
+          {/* Outgoing terminal */}
+          <line x1={0} y1={10} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+        </g>
+      );
+
+    case 'motor_breaker':
+      return (
+        <g>
+          {/* Incoming 3-phase feed line */}
+          <line x1={0} y1={-28} x2={0} y2={-14} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <rect
+            x={-17}
+            y={-18}
+            width={34}
+            height={36}
+            rx={3}
+            fill={theme.nodeFill}
+            stroke={theme.strokeAccent}
+            strokeWidth={1.8}
+          />
+          {/* Fixed contact pad with disconnect cross */}
+          <line x1={-3} y1={-15} x2={3} y2={-9} stroke={theme.strokeMain} strokeWidth={1.5} />
+          <line x1={3} y1={-15} x2={-3} y2={-9} stroke={theme.strokeMain} strokeWidth={1.5} />
+          {/* Contact arm */}
+          <line x1={0} y1={10} x2={-9} y2={-9} stroke={theme.strokeAccent} strokeWidth={2.2} />
+          {/* Regulable Thermal Element (Flecha diagonal de ajuste motor) */}
+          <path
+            d="M -9 0 L -5 0 L -5 -5 L -9 -5"
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1.4}
+          />
+          <line x1={-11} y1={2} x2={-3} y2={-7} stroke={theme.strokeAccent} strokeWidth={1.4} />
+          <polygon points="-4,-7 -2,-8 -3,-5" fill={theme.strokeAccent} />
+          {/* Magnetic instantaneous trip */}
+          <path d="M -9 6 L -5 6 L -5 3" fill="none" stroke={theme.strokeMain} strokeWidth={1.4} />
+          <polygon points="-7,3 -3,3 -5,0" fill={theme.strokeMain} />
+          {/* Outgoing terminal */}
+          <line x1={0} y1={10} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+        </g>
+      );
+
+    case 'rccb':
+      return (
+        <g>
+          {/* Incoming terminal */}
+          <line x1={0} y1={-28} x2={0} y2={-14} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* RCCB Enclosure */}
+          <rect
+            x={-19}
+            y={-18}
+            width={38}
+            height={36}
+            rx={3}
+            fill={theme.nodeFill}
+            stroke={theme.strokeAccent}
+            strokeWidth={1.8}
+          />
+          {/* Main switch blade */}
+          <line x1={0} y1={-13} x2={0} y2={-10} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <line x1={0} y1={4} x2={-8} y2={-10} stroke={theme.strokeMain} strokeWidth={2.2} />
+          {/* Toroidal Detection Core (Toroide diferencial que abraza las fases) */}
           <ellipse
             cx={0}
-            cy={10}
-            rx={8}
-            ry={3.5}
+            cy={9}
+            rx={10}
+            ry={4.5}
+            fill="none"
+            stroke={theme.strokeAccent}
+            strokeWidth={1.8}
+          />
+          {/* Sensing secondary coil winding */}
+          <path
+            d="M 6 8 A 2.5 2.5 0 0 1 10 9 A 2.5 2.5 0 0 1 10 11"
             fill="none"
             stroke={theme.strokeAccent}
             strokeWidth={1.5}
           />
-          <line x1={0} y1={12} x2={-8} y2={-11} stroke={theme.strokeMain} strokeWidth={2} />
+          {/* Trip Relay Mechanical Linkage */}
           <line
-            x1={-8}
-            y1={10}
-            x2={-5}
-            y2={-2}
+            x1={-7}
+            y1={9}
+            x2={-4}
+            y2={-3}
             stroke={theme.strokeAccent}
             strokeWidth={1.2}
             strokeDasharray="2,2"
           />
-          <line x1={0} y1={12} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Test Push Button "T" & Loop (Botón de comprobación periódica) */}
+          <line x1={-12} y1={-12} x2={-16} y2={-12} stroke={theme.textPrimary} strokeWidth={1.2} />
+          <line x1={-16} y1={-12} x2={-16} y2={4} stroke={theme.textPrimary} strokeWidth={1.2} />
+          <line x1={-16} y1={4} x2={-12} y2={4} stroke={theme.textPrimary} strokeWidth={1.2} />
+          <rect x={-18} y={-7} width={6} height={6} rx={1} fill={theme.nodeFill} stroke={theme.textPrimary} strokeWidth={1} />
+          <text x={-15} y={-2.5} textAnchor="middle" fill={theme.strokeAccent} fontSize={6.5} fontWeight="bold" fontFamily="monospace">
+            T
+          </text>
+          {/* Outgoing terminal */}
+          <line x1={0} y1={13.5} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
         </g>
       );
 
     case 'spd':
       return (
         <g>
+          {/* Phase connection from top */}
           <line x1={0} y1={-28} x2={0} y2={-16} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* SPD Enclosure */}
           <rect
-            x={-15}
+            x={-16}
             y={-16}
-            width={30}
+            width={32}
             height={32}
-            rx={2}
+            rx={3}
             fill={theme.nodeFill}
             stroke={theme.strokeBusbar}
             strokeWidth={1.8}
           />
-          <polygon points="0,8 -6,-6 6,-6" fill={theme.strokeBusbar} />
-          <line x1={-7} y1={8} x2={7} y2={8} stroke={theme.strokeBusbar} strokeWidth={2} />
+          {/* Non-linear Varistor Symbol (Resistencia dependiente de la tensión / hockey-stick) */}
+          <rect
+            x={-9}
+            y={-10}
+            width={18}
+            height={20}
+            fill="none"
+            stroke={theme.strokeBusbar}
+            strokeWidth={1.6}
+          />
+          {/* Oblique line with upper horizontal hook (Varistor characteristic curve) */}
+          <path
+            d="M -12 8 L 8 -8 L 12 -8"
+            fill="none"
+            stroke={theme.strokeBusbar}
+            strokeWidth={1.8}
+          />
+          {/* Cartridge Status Indicator Window (Verde = Operativo) */}
+          <rect x={-4} y={3} width={8} height={4} rx={1} fill="#22C55E" />
+          {/* Earth ground conductor line & PE symbol */}
           <line x1={0} y1={16} x2={0} y2={28} stroke={theme.strokeGround} strokeWidth={1.8} />
+          <line x1={-6} y1={28} x2={6} y2={28} stroke={theme.strokeGround} strokeWidth={2} />
+          <line x1={-3.5} y1={31} x2={3.5} y2={31} stroke={theme.strokeGround} strokeWidth={2} />
         </g>
       );
 
     case 'ground':
       return (
         <g>
-          <line x1={0} y1={-28} x2={0} y2={-4} stroke={theme.strokeGround} strokeWidth={2} />
-          <line x1={-16} y1={-4} x2={16} y2={-4} stroke={theme.strokeGround} strokeWidth={2.2} />
-          <line x1={-10} y1={3} x2={10} y2={3} stroke={theme.strokeGround} strokeWidth={2.2} />
-          <line x1={-4} y1={10} x2={4} y2={10} stroke={theme.strokeGround} strokeWidth={2.2} />
+          <line x1={0} y1={-28} x2={0} y2={-4} stroke={theme.strokeGround} strokeWidth={2.2} />
+          {/* UNE Standard Earthing Bars (Tres barras decrecientes) */}
+          <line x1={-18} y1={-4} x2={18} y2={-4} stroke={theme.strokeGround} strokeWidth={2.5} />
+          <line x1={-11} y1={3} x2={11} y2={3} stroke={theme.strokeGround} strokeWidth={2.5} />
+          <line x1={-5} y1={10} x2={5} y2={10} stroke={theme.strokeGround} strokeWidth={2.5} />
+          <text
+            x={14}
+            y={12}
+            fill={theme.strokeGround}
+            fontSize={9.5}
+            fontWeight="bold"
+            fontFamily="monospace"
+          >
+            PE
+          </text>
         </g>
       );
 
     case 'fuse':
       return (
         <g>
+          {/* Conductor passing completely through the fuse link (UNE-EN 60617 standard) */}
           <line x1={0} y1={-28} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
           <rect
             x={-8}
             y={-14}
             width={16}
             height={28}
-            fill="none"
+            fill={theme.nodeFill}
             stroke={theme.strokeMain}
             strokeWidth={1.8}
           />
@@ -2752,25 +3907,81 @@ function IECSymbolGraphic({
     case 'contactor':
       return (
         <g>
-          <line x1={0} y1={-28} x2={0} y2={-12} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <line x1={0} y1={-28} x2={0} y2={-13} stroke={theme.strokeMain} strokeWidth={1.8} />
           <rect
-            x={-15}
+            x={-16}
             y={-16}
-            width={30}
+            width={32}
             height={32}
             rx={3}
             fill={theme.nodeFill}
             stroke={theme.strokeMain}
             strokeWidth={1.6}
           />
+          {/* Contactor Semicircular Actuator Cup on NO contact (IEC 60617 standard) */}
           <path
-            d="M -4 -12 A 4 4 0 0 1 4 -12"
+            d="M -6 -13 A 5 5 0 0 1 4 -13"
             fill="none"
             stroke={theme.strokeAccent}
-            strokeWidth={1.6}
+            strokeWidth={1.8}
           />
-          <line x1={0} y1={12} x2={-8} y2={-10} stroke={theme.strokeMain} strokeWidth={2} />
-          <line x1={0} y1={12} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <line x1={0} y1={10} x2={-9} y2={-11} stroke={theme.strokeMain} strokeWidth={2} />
+          {/* Electromagnetic coil indication */}
+          <rect x={-12} y={3} width={8} height={8} fill="none" stroke={theme.strokeAccent} strokeWidth={1.2} />
+          <line x1={-12} y1={3} x2={-4} y2={11} stroke={theme.strokeAccent} strokeWidth={1.2} />
+          <line x1={0} y1={10} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+        </g>
+      );
+
+    case 'subpanel':
+      return (
+        <g>
+          <line x1={0} y1={-28} x2={0} y2={-16} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Subpanel enclosure with technical dashed double border */}
+          <rect
+            x={-19}
+            y={-16}
+            width={38}
+            height={32}
+            rx={3}
+            fill={theme.nodeFill}
+            stroke={theme.strokeAccent}
+            strokeWidth={1.8}
+            strokeDasharray="4,2"
+          />
+          <rect
+            x={-15}
+            y={-12}
+            width={30}
+            height={24}
+            rx={2}
+            fill="none"
+            stroke={theme.strokeMain}
+            strokeWidth={1}
+          />
+          <text
+            x={0}
+            y={2}
+            textAnchor="middle"
+            fill={theme.strokeAccent}
+            fontSize={9}
+            fontWeight="bold"
+            fontFamily="monospace"
+          >
+            SC
+          </text>
+          <line x1={0} y1={16} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
+        </g>
+      );
+
+    case 'terminal':
+      return (
+        <g>
+          <line x1={0} y1={-28} x2={0} y2={-7} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Terminal clamp circle */}
+          <circle cx={0} cy={0} r={7} fill={theme.nodeFill} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <circle cx={0} cy={0} r={2} fill={theme.strokeAccent} />
+          <line x1={0} y1={7} x2={0} y2={28} stroke={theme.strokeMain} strokeWidth={1.8} />
         </g>
       );
 
@@ -2778,6 +3989,7 @@ function IECSymbolGraphic({
       return (
         <g>
           <line x1={0} y1={-28} x2={0} y2={-16} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Luminaire circle with cross (UNE-EN 60617 standard) */}
           <circle
             cx={0}
             cy={0}
@@ -2786,8 +3998,8 @@ function IECSymbolGraphic({
             stroke={theme.strokeBusbar}
             strokeWidth={2}
           />
-          <line x1={-11} y1={-11} x2={11} y2={11} stroke={theme.strokeBusbar} strokeWidth={1.8} />
-          <line x1={11} y1={-11} x2={-11} y2={11} stroke={theme.strokeBusbar} strokeWidth={1.8} />
+          <line x1={-11.3} y1={-11.3} x2={11.3} y2={11.3} stroke={theme.strokeBusbar} strokeWidth={2} />
+          <line x1={11.3} y1={-11.3} x2={-11.3} y2={11.3} stroke={theme.strokeBusbar} strokeWidth={2} />
         </g>
       );
 
@@ -2795,6 +4007,7 @@ function IECSymbolGraphic({
       return (
         <g>
           <line x1={0} y1={-28} x2={0} y2={-10} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Socket outlet housing */}
           <circle
             cx={0}
             cy={2}
@@ -2803,13 +4016,38 @@ function IECSymbolGraphic({
             stroke={theme.strokeMain}
             strokeWidth={1.8}
           />
+          {/* Semicircular receptacle arc (IEC standard) */}
           <path
-            d="M -10 8 A 10 10 0 0 1 10 8"
+            d="M -11 8 A 11 11 0 0 1 11 8"
             fill="none"
+            stroke={theme.strokeAccent}
+            strokeWidth={2.2}
+          />
+          {/* Earth pin line */}
+          <line x1={0} y1={-10} x2={0} y2={-3} stroke={theme.strokeAccent} strokeWidth={2.2} />
+        </g>
+      );
+
+    case 'load_hvac':
+      return (
+        <g>
+          <line x1={0} y1={-28} x2={0} y2={-16} stroke={theme.strokeMain} strokeWidth={1.8} />
+          <circle
+            cx={0}
+            cy={0}
+            r={16}
+            fill={theme.nodeFill}
             stroke={theme.strokeAccent}
             strokeWidth={2}
           />
-          <line x1={0} y1={-10} x2={0} y2={-2} stroke={theme.strokeAccent} strokeWidth={2} />
+          {/* Heat pump / fan blades symbol */}
+          <path
+            d="M -9 0 C -9 -7, 0 -7, 0 0 C 0 7, 9 7, 9 0"
+            fill="none"
+            stroke={theme.strokeAccent}
+            strokeWidth={1.8}
+          />
+          <line x1={-8} y1={-8} x2={8} y2={8} stroke={theme.strokeAccent} strokeWidth={1.2} strokeDasharray="2,2" />
         </g>
       );
 
@@ -2817,6 +4055,7 @@ function IECSymbolGraphic({
       return (
         <g>
           <line x1={0} y1={-28} x2={0} y2={-18} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* Stator circle */}
           <circle
             cx={0}
             cy={0}
@@ -2846,6 +4085,10 @@ function IECSymbolGraphic({
           >
             3~
           </text>
+          {/* Terminal markings dots */}
+          <circle cx={-5} cy={-14} r={1.2} fill={theme.strokeMain} />
+          <circle cx={0} cy={-14} r={1.2} fill={theme.strokeMain} />
+          <circle cx={5} cy={-14} r={1.2} fill={theme.strokeMain} />
         </g>
       );
 
@@ -2853,27 +4096,35 @@ function IECSymbolGraphic({
       return (
         <g>
           <line x1={0} y1={-28} x2={0} y2={-18} stroke={theme.strokeMain} strokeWidth={1.8} />
+          {/* EV Charging Station Pillar Outline */}
           <rect
             x={-16}
             y={-18}
             width={32}
             height={36}
-            rx={5}
+            rx={4}
             fill={theme.nodeFill}
             stroke={theme.strokeGround}
             strokeWidth={2}
           />
           <text
             x={0}
-            y={4}
+            y={-2}
             textAnchor="middle"
             fill={theme.strokeGround}
-            fontSize={10}
+            fontSize={9.5}
             fontWeight="bold"
             fontFamily="monospace"
           >
-            EV
+            SAVE
           </text>
+          {/* Charging cable and vehicle plug symbol */}
+          <path
+            d="M -7 9 L 7 9 M 0 9 L 0 13 M -4 13 L 4 13"
+            fill="none"
+            stroke={theme.strokeGround}
+            strokeWidth={1.6}
+          />
         </g>
       );
 

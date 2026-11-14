@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -32,16 +32,27 @@ import {
   WifiOff,
   Smartphone,
   Save,
-  GitBranch
+  GitBranch,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { ExportModal } from './components/ExportModal';
-import { ElectricalCADScreen } from './components/ElectricalCADScreen';
+import { ElectricalCADScreen, generateCADFromCircuits } from './components/ElectricalCADScreen';
 import { ChangelogModal } from './components/ChangelogModal';
 import { APP_VERSION } from './utils/versionHistory';
-import { CircuitRecord, ProjectMetadata } from './utils/pdfExport';
+import {
+  CircuitRecord,
+  ProjectMetadata,
+  PanelBoardConfig,
+  DifferentialGroup,
+  DEFAULT_PANEL_CONFIG
+} from './utils/pdfExport';
+import {
+  validateProtectionSelectivity,
+  SelectivityValidationResult
+} from './utils/selectivity';
 
 // --- Types ---
 type Screen = 'dashboard' | 'cad' | 'power' | 'voltage_drop' | 'protections' | 'canalizacion' | 'installation' | 'advanced_circuit' | 'docs';
@@ -50,11 +61,11 @@ type CalcMode = 'power' | 'current';
 type Material = 'cu' | 'al';
 
 const INITIAL_CIRCUITS: CircuitRecord[] = [
-  { id: 'C1 - Alumbrado General', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '1.5 mm²', n: '1', carga: '2,3', ud: 'kW', fu: '1,0', fs: '1,0', ib: '10,00', in: '10', xin: '1,0', ir: '10,0', iz: '15,83', l: '18,0', deltaU: '1,12' },
-  { id: 'C2 - Tomas de Corriente', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '2.5 mm²', n: '1', carga: '3,68', ud: 'kW', fu: '1,0', fs: '1,0', ib: '16,00', in: '16', xin: '1,0', ir: '16,0', iz: '20,36', l: '22,0', deltaU: '1,68' },
-  { id: 'C3 - Climatización / AC', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '6 mm²', n: '1', carga: '5,5', ud: 'kW', fu: '1,0', fs: '1,0', ib: '23,91', in: '25', xin: '1,0', ir: '25,0', iz: '38,45', l: '15,0', deltaU: '0,87' },
-  { id: 'C4 - Fuerza Trifásica Nave', metodo: 'B1', conductores: '3F+N Cu', tension: '400,0', aisl: 'Z1', seccion: '16 mm²', n: '1', carga: '22,0', ud: 'kW', fu: '1,0', fs: '1,0', ib: '39,69', in: '40', xin: '1,0', ir: '40,0', iz: '62,20', l: '35,0', deltaU: '1,35' },
-  { id: 'C5 - Recarga Vehículo Eléc.', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '10 mm²', n: '1', carga: '7,4', ud: 'kW', fu: '1,0', fs: '1,0', ib: '32,17', in: '40', xin: '1,0', ir: '40,0', iz: '50,33', l: '28,0', deltaU: '1,89' }
+  { id: 'C1 - Alumbrado General', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '1.5 mm²', n: '1', carga: '2,3', ud: 'kW', fu: '1,0', fs: '1,0', ib: '10,00', in: '10', xin: '1,0', ir: '10,0', iz: '15,83', l: '18,0', deltaU: '1,12', grupoId: 'ID1', curva: 'C', poderCorte: '6kA', tipoProteccion: 'Interruptor automático' },
+  { id: 'C2 - Tomas de Corriente', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '2.5 mm²', n: '1', carga: '3,68', ud: 'kW', fu: '1,0', fs: '1,0', ib: '16,00', in: '16', xin: '1,0', ir: '16,0', iz: '20,36', l: '22,0', deltaU: '1,68', grupoId: 'ID1', curva: 'C', poderCorte: '6kA', tipoProteccion: 'Interruptor automático' },
+  { id: 'C3 - Climatización / AC', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '6 mm²', n: '1', carga: '5,5', ud: 'kW', fu: '1,0', fs: '1,0', ib: '23,91', in: '25', xin: '1,0', ir: '25,0', iz: '38,45', l: '15,0', deltaU: '0,87', grupoId: 'ID2', curva: 'C', poderCorte: '6kA', tipoProteccion: 'Interruptor automático' },
+  { id: 'C4 - Fuerza Trifásica Nave', metodo: 'B1', conductores: '3F+N Cu', tension: '400,0', aisl: 'Z1', seccion: '16 mm²', n: '1', carga: '22,0', ud: 'kW', fu: '1,0', fs: '1,0', ib: '39,69', in: '40', xin: '1,0', ir: '40,0', iz: '62,20', l: '35,0', deltaU: '1,35', grupoId: 'ID2', curva: 'C', poderCorte: '10kA', tipoProteccion: 'Interruptor automático' },
+  { id: 'C5 - Recarga Vehículo Eléc.', metodo: 'B1', conductores: '1F+N+CP Cu', tension: '230,0', aisl: 'Z1', seccion: '10 mm²', n: '1', carga: '7,4', ud: 'kW', fu: '1,0', fs: '1,0', ib: '32,17', in: '40', xin: '1,0', ir: '40,0', iz: '50,33', l: '28,0', deltaU: '1,89', grupoId: 'ID2', curva: 'C', poderCorte: '6kA', tipoProteccion: 'Interruptor automático' }
 ];
 
 // --- Main App Component ---
@@ -125,6 +136,13 @@ export default function App() {
               setCircuits={setCircuits}
               onShowToast={showToast}
               onOpenExport={() => setIsExportModalOpen(true)}
+              onTransferToCAD={(panelConfig) => {
+                const generated = generateCADFromCircuits(circuits, panelConfig);
+                localStorage.setItem('voltmetric_cad_nodes_v1', JSON.stringify(generated.nodes));
+                localStorage.setItem('voltmetric_cad_wires_v1', JSON.stringify(generated.wires));
+                setCurrentScreen('cad');
+                showToast(`Cuadro transferido al Esquema Unifilar CAD (${circuits.length} líneas y ${panelConfig.differentialGroups.length} grupos ID)`);
+              }}
             />
           )}
           {currentScreen === 'cad' && (
@@ -2118,39 +2136,137 @@ function InstallationScreen() {
   );
 }
 
+// Base reference ampacity table (Cu, 3x XLPE/Z1 90°C, Method B1 at 40°C ambient air)
+const BASE_SECTIONS_B1_CU_90 = [
+  { s: 1.5, izBase: 17.5, xOhmKm: 0.105 },
+  { s: 2.5, izBase: 24.0, xOhmKm: 0.098 },
+  { s: 4, izBase: 32.0, xOhmKm: 0.092 },
+  { s: 6, izBase: 41.0, xOhmKm: 0.087 },
+  { s: 10, izBase: 57.0, xOhmKm: 0.082 },
+  { s: 16, izBase: 76.0, xOhmKm: 0.078 },
+  { s: 25, izBase: 101.0, xOhmKm: 0.076 },
+  { s: 35, izBase: 125.0, xOhmKm: 0.074 },
+  { s: 50, izBase: 151.0, xOhmKm: 0.072 },
+  { s: 70, izBase: 192.0, xOhmKm: 0.071 },
+  { s: 95, izBase: 232.0, xOhmKm: 0.070 },
+  { s: 120, izBase: 269.0, xOhmKm: 0.069 },
+  { s: 150, izBase: 300.0, xOhmKm: 0.068 },
+  { s: 185, izBase: 341.0, xOhmKm: 0.068 },
+  { s: 240, izBase: 400.0, xOhmKm: 0.067 },
+  { s: 300, izBase: 458.0, xOhmKm: 0.066 }
+];
+
+const METHOD_FACTORS_UNE: Record<string, number> = {
+  A1: 0.78,
+  A2: 0.73,
+  B1: 1.00,
+  B2: 0.89,
+  C: 1.14,
+  D1: 0.92,
+  D2: 0.96,
+  E: 1.22,
+  F: 1.31
+};
+
+const GROUPING_TABLE_B52_17: Record<number, number> = {
+  1: 1.00,
+  2: 0.80,
+  3: 0.70,
+  4: 0.65,
+  5: 0.60,
+  6: 0.57,
+  7: 0.54,
+  8: 0.52,
+  9: 0.50,
+  10: 0.48,
+  11: 0.46,
+  12: 0.45
+};
+
+const STANDARD_IN_CALIBRES = [
+  6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630
+];
+
+function computeProtectiveSection(sf: number): number {
+  if (sf <= 16) return sf;
+  if (sf <= 35) return 16;
+  return sf / 2;
+}
+
 function AdvancedCircuitScreen({
   circuits,
   setCircuits,
   onShowToast,
-  onOpenExport
+  onOpenExport,
+  onTransferToCAD
 }: {
   circuits: CircuitRecord[];
   setCircuits: React.Dispatch<React.SetStateAction<CircuitRecord[]>>;
   onShowToast: (msg: string) => void;
   onOpenExport: () => void;
+  onTransferToCAD: (panelConfig: PanelBoardConfig) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'condiciones' | 'receptor' | 'seccion' | 'tabla'>('receptor');
-  
-  // State for receptor tab
+  const [activeTab, setActiveTab] = useState<
+    'condiciones' | 'receptor' | 'seccion' | 'tabla' | 'cuadro'
+  >('receptor');
+
+  // --- PanelBoard Configuration (Cabecera IGA, SPD, Diferenciales y Repartidor) ---
+  const [panelConfig, setPanelConfig] = useState<PanelBoardConfig>(() => {
+    const saved = localStorage.getItem('voltmetric_panel_config_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_PANEL_CONFIG, ...parsed };
+      } catch (e) {}
+    }
+    return DEFAULT_PANEL_CONFIG;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('voltmetric_panel_config_v1', JSON.stringify(panelConfig));
+  }, [panelConfig]);
+
+  // --- State for Receptor Tab ---
+  const [alimentacion, setAlimentacion] = useState<'3F+N' | '3F' | '1F+N'>('3F+N');
   const [tension, setTension] = useState('400.0');
-  const [aislamiento, setAislamiento] = useState('Z1');
-  const [alimentacion, setAlimentacion] = useState('3F+N');
+  const [aislamiento, setAislamiento] = useState<'Z1' | 'XLPE' | 'PVC' | 'EPR'>('Z1');
+  const [grupoId, setGrupoId] = useState<string>('ID2');
   const [numero, setNumero] = useState('1');
   const [potencia, setPotencia] = useState('15.0');
+  const [intensidadDirecta, setIntensidadDirecta] = useState('25.47');
   const [cosPhi, setCosPhi] = useState('0.85');
+  const [tercerArmonico, setTercerArmonico] = useState('0.0');
+  const [fu, setFu] = useState('1.0');
+  const [fs, setFs] = useState('1.0');
   const [longitud, setLongitud] = useState('25.0');
   const [caidaMax, setCaidaMax] = useState('5.0');
+
+  // Protection & Conductors in Receptor Tab
+  const [tipoProteccion, setTipoProteccion] = useState<
+    'Interruptor automático' | 'Fusible gG' | 'Guardamotor'
+  >('Interruptor automático');
+  const [modoIn, setModoIn] = useState<'auto' | 'manual'>('auto');
   const [intensidadNominal, setIntensidadNominal] = useState('32');
+  const [curvaProteccion, setCurvaProteccion] = useState<'B' | 'C' | 'D' | 'MA'>('C');
+  const [poderCorte, setPoderCorte] = useState<'6kA' | '10kA' | '15kA' | '25kA'>('6kA');
+  const [irFactor, setIrFactor] = useState('1.00');
   const [conductoresPorFase, setConductoresPorFase] = useState('1');
-  
-  // State for condiciones tab
+  const [seccionMinima, setSeccionMinima] = useState('1.5');
+  const [separacion, setSeparacion] = useState('En contacto (0 m)');
+  const [circuitosAdicionales, setCircuitosAdicionales] = useState('0');
+  const [frAgrupamiento, setFrAgrupamiento] = useState('1.00');
+  const [frAdicional, setFrAdicional] = useState('1.00');
+
+  // --- State for Condiciones Tab ---
+  const [metodoInstalacion, setMetodoInstalacion] = useState('Bajo tubo empotrado en obra (mampostería)');
+  const [disposicionCables, setDisposicionCables] = useState(
+    'Agrupados en conducto, superficie, empotrados o bandeja'
+  );
   const [metodo, setMetodo] = useState('B1');
   const [tempAmbiente, setTempAmbiente] = useState('40');
-  const [metodoInstalacion, setMetodoInstalacion] = useState('Bajo tubo empotrado');
-  const [disposicionCables, setDisposicionCables] = useState('Agrupados en el aire, superficie, empotrados o embutidos');
-  const [profundidad, setProfundidad] = useState('---');
-  const [resistividadTermica, setResistividadTermica] = useState('---');
-  const [icc, setIcc] = useState('');
+  const [profundidad, setProfundidad] = useState('0.7');
+  const [resistividadTermica, setResistividadTermica] = useState('1.0');
+  const [icc, setIcc] = useState('6.0');
   const [duracionIcc, setDuracionIcc] = useState('0.1');
 
   // Calculation Options
@@ -2158,142 +2274,553 @@ function AdvancedCircuitScreen({
   const [tipoConductor, setTipoConductor] = useState<'cobre' | 'aluminio'>('cobre');
   const [calculoConductor, setCalculoConductor] = useState<'unipolar' | 'multiconductor'>('unipolar');
 
+  // Manual section override from Tabla tab (null = Automatic UNE 60364-5-52)
+  const [selectedManualSection, setSelectedManualSection] = useState<string | null>(null);
+
   // Circuit ID & search state
   const [circuitoId, setCircuitoId] = useState(`C${circuits.length + 1} - Nueva Línea`);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Dynamic Calculations (Move out of renderTabContent)
-  const v = parseFloat(tension) || 400;
-  const p = parseFloat(potencia) || 40;
-  const cpf = parseFloat(cosPhi) || 0.8;
-  const length = parseFloat(longitud) || 10;
-  const num = parseFloat(numero) || 1;
-  const cpf_fase = parseFloat(conductoresPorFase) || 1;
-  
+  // Auto-map installation method + cable construction to UNE-HD 60364-5-52 reference method
+  const handleInstallationMethodChange = (
+    newMetodoInst: string,
+    newCalculoCond: 'unipolar' | 'multiconductor' = calculoConductor
+  ) => {
+    setMetodoInstalacion(newMetodoInst);
+    let mapped = 'B1';
+    if (newMetodoInst.includes('pared aislante')) {
+      mapped = newCalculoCond === 'unipolar' ? 'A1' : 'A2';
+    } else if (newMetodoInst.includes('Bajo tubo')) {
+      mapped = newCalculoCond === 'unipolar' ? 'B1' : 'B2';
+    } else if (newMetodoInst.includes('Adosado directamente')) {
+      mapped = 'C';
+    } else if (newMetodoInst.includes('bandeja perforada')) {
+      mapped = newCalculoCond === 'unipolar' ? 'F' : 'E';
+    } else if (newMetodoInst.includes('enterrados bajo tubo')) {
+      mapped = 'D1';
+    } else if (newMetodoInst.includes('directamente enterrados')) {
+      mapped = 'D2';
+    }
+    setMetodo(mapped);
+  };
+
+  // Auto-update grouping factor when circuitosAdicionales changes
+  const handleCircuitosAdicionalesChange = (val: string) => {
+    setCircuitosAdicionales(val);
+    const totalCircs = (parseInt(val, 10) || 0) + 1;
+    const tableFactor = GROUPING_TABLE_B52_17[Math.min(12, Math.max(1, totalCircs))] || 0.45;
+    setFrAgrupamiento(tableFactor.toFixed(2));
+  };
+
+  // --- Core Normative Calculations (UNE-HD 60364-5-52 & REBT) ---
+  const v = Math.max(12, parseFloat(tension) || (alimentacion === '1F+N' ? 230 : 400));
+  const numReceptores = Math.max(1, parseFloat(numero) || 1);
+  const cpf = Math.min(1, Math.max(0.1, parseFloat(cosPhi) || 0.85));
+  const fuVal = Math.max(0.1, parseFloat(fu) || 1.0);
+  const fsVal = Math.max(0.1, parseFloat(fs) || 1.0);
+  const length = Math.max(0.5, parseFloat(longitud) || 10);
+  const maxDropPct = Math.max(0.1, parseFloat(caidaMax) || 5.0);
+  const nPorFase = Math.max(1, parseInt(conductoresPorFase, 10) || 1);
+  const sMinReq = parseFloat(seccionMinima) || 1.5;
+  const harmPct = parseFloat(tercerArmonico) || 0;
+
   const isMono = alimentacion === '1F+N';
-  const ib = isMono 
-    ? (p * 1000) / (v * cpf) 
-    : (p * 1000) / (Math.sqrt(3) * v * cpf);
-  
-  // Correction factors stub (Can be expanded later)
-  let k_temp = 1.0;
-  const t = parseInt(tempAmbiente);
-  if (aislamiento === 'XLPE' || aislamiento === 'Z1') {
-    if (t > 40) k_temp = 1.0 - (t - 40) * 0.02;
-    else if (t < 40) k_temp = 1.0 + (40 - t) * 0.02;
-  } else { // PVC
-    if (t > 40) k_temp = 1.0 - (t - 40) * 0.03;
-    else if (t < 40) k_temp = 1.0 + (40 - t) * 0.03;
+  const rawPowerKw = parseFloat(potencia) || 0;
+  const rawCurrentA = parseFloat(intensidadDirecta) || 0;
+
+  // Effective design current Ib and total design power P_diseño (kW)
+  const ib =
+    tipoCalculo === 'potencia'
+      ? isMono
+        ? (rawPowerKw * 1000 * numReceptores * fuVal * fsVal) / (v * cpf)
+        : (rawPowerKw * 1000 * numReceptores * fuVal * fsVal) / (Math.sqrt(3) * v * cpf)
+      : rawCurrentA * numReceptores * fuVal * fsVal;
+
+  const pCalculadaKw =
+    tipoCalculo === 'potencia'
+      ? rawPowerKw * numReceptores * fuVal * fsVal
+      : isMono
+      ? (ib * v * cpf) / 1000
+      : (Math.sqrt(3) * ib * v * cpf) / 1000;
+
+  // Automatic or manual nominal breaker rating In
+  const autoInNumber =
+    STANDARD_IN_CALIBRES.find((cal) => cal >= Math.max(ib, 6)) ||
+    STANDARD_IN_CALIBRES[STANDARD_IN_CALIBRES.length - 1];
+  const effectiveIn =
+    modoIn === 'auto' ? autoInNumber : parseFloat(intensidadNominal) || autoInNumber;
+  const irMult = Math.min(1.0, Math.max(0.5, parseFloat(irFactor) || 1.0));
+  const effectiveIr = effectiveIn * irMult;
+
+  // Correction Factors (UNE-HD 60364-5-52)
+  const isBuried = metodo === 'D1' || metodo === 'D2';
+  const is90C = aislamiento === 'Z1' || aislamiento === 'XLPE' || aislamiento === 'EPR';
+  const tMaxCond = is90C ? 90 : 70;
+  const tAmbNum = parseFloat(tempAmbiente) || (isBuried ? 25 : 40);
+  const tRef = isBuried ? 20 : 30; // UNE reference (30°C air, 20°C ground)
+
+  // Temperature correction factor Ft (Table B.52.14 / B.52.15)
+  const kTemp = Math.max(
+    0.35,
+    Math.min(1.25, Math.sqrt(Math.max(5, tMaxCond - tAmbNum) / Math.max(5, tMaxCond - tRef)))
+  );
+
+  // Grouping factor Fg (Table B.52.17) * Fr adicional
+  const kAgrup = Math.max(0.25, Math.min(1.0, parseFloat(frAgrupamiento) || 1.0));
+  const kAdic = Math.max(0.25, Math.min(1.2, parseFloat(frAdicional) || 1.0));
+
+  // Soil resistivity & depth factor for D1/D2
+  let kTerreno = 1.0;
+  if (isBuried) {
+    const resNum = parseFloat(resistividadTermica) || 1.0;
+    const profNum = parseFloat(profundidad) || 0.7;
+    const fRes =
+      resNum <= 0.5
+        ? 1.28
+        : resNum <= 0.7
+        ? 1.2
+        : resNum <= 1.0
+        ? 1.18
+        : resNum <= 1.5
+        ? 1.1
+        : resNum <= 2.0
+        ? 1.05
+        : 1.0;
+    const fProf = profNum <= 0.5 ? 1.04 : profNum <= 0.7 ? 1.0 : profNum <= 1.0 ? 0.97 : 0.94;
+    kTerreno = +(fRes * fProf).toFixed(3);
   }
 
-  const tableRows = [
-    { s: '1.5', iz: '8.77', icc: '0.55' },
-    { s: '2.5', iz: '11.88', icc: '0.91' },
-    { s: '4', iz: '15.83', icc: '1.45' },
-    { s: '6', iz: '20.36', icc: '2.18' },
-    { s: '10', iz: '28.27', icc: '3.64' },
-    { s: '16', iz: '38.45', icc: '5.82' },
-    { s: '25', iz: '50.33', icc: '9.09' },
-    { s: '35', iz: '62.20', icc: '12.73' },
-    { s: '50', iz: '75.78', icc: '18.18' },
-    { s: '70', iz: '96.70', icc: '25.46' },
-    { s: '95', iz: '117.06', icc: '34.55' },
-    { s: '120', iz: '135.15', icc: '43.64' },
-    { s: '150', iz: '148.16', icc: '54.55' },
-    { s: '185', iz: '167.39', icc: '67.28' },
-    { s: '240', iz: '195.66', icc: '87.28' },
-  ].map(row => {
-    const izNum = parseFloat(row.iz) * k_temp * cpf_fase;
-    const sNum = parseFloat(row.s);
-    
-    const isFail = ib > izNum;
-    let ratio = (ib / izNum) * 100;
-    if (ratio > 9999) ratio = 9999;
-    
-    // Conductivity thermally corrected according to Guía BT Anexo 2: PVC 70ºC (Cu=48, Al=30), XLPE/Z1 90ºC (Cu=44, Al=28)
-    const gammaSizing = (tipoConductor === 'cobre') 
-      ? (aislamiento === 'PVC' ? 48 : 44) 
-      : (aislamiento === 'PVC' ? 30 : 28);
-    
-    const factor_red = isMono ? 2 : Math.sqrt(3);
-    const caidaVolts = (factor_red * length * ib * cpf) / (gammaSizing * sNum * cpf_fase);
-    const caidaRow = (caidaVolts / v) * 100;
-    
+  // 3rd Harmonic factor (UNE-HD 60364-5-52 Annex E.52.1 for 3F+N)
+  let kArmonico = 1.0;
+  if (alimentacion === '3F+N' && harmPct >= 15) {
+    if (harmPct <= 33) kArmonico = 0.86;
+    else if (harmPct <= 45) kArmonico = 0.86 * (3 * (harmPct / 100));
+    else kArmonico = 0.75;
+  }
+
+  const kTotal = +(kTemp * kAgrup * kAdic * kTerreno * kArmonico).toFixed(4);
+
+  // Short-circuit adiabatic constant K (UNE 60364-4-43)
+  const kAdiabatic =
+    tipoConductor === 'cobre' ? (is90C ? 143 : 115) : is90C ? 94 : 76;
+  const iccPrevistaKa = Math.max(0, parseFloat(icc) || 0);
+  const tIccSec = Math.max(0.02, parseFloat(duracionIcc) || 0.1);
+  const sMinCortocircuito =
+    iccPrevistaKa > 0 ? (iccPrevistaKa * 1000 * Math.sqrt(tIccSec)) / kAdiabatic : 0;
+
+  // Method base multiplier, phase multiplier (2x mono vs 3x tri), material (Cu vs Al), insulation (90°C vs 70°C)
+  const methodMult = METHOD_FACTORS_UNE[metodo] || 1.0;
+  const phaseMult = isMono ? 1.12 : 1.0;
+  const matMult = tipoConductor === 'aluminio' ? 0.78 : 1.0;
+  const insulMult = is90C ? 1.0 : 0.84;
+
+  // Conductivity at reference 20°C (Cu = 56, Al = 35 m/(Ω·mm²))
+  const gamma20 = tipoConductor === 'cobre' ? 56.0 : 35.0;
+  const alphaTemp = 0.00393;
+
+  // Build full UNE-HD 60364-5-52 calculation table
+  const tableRows = BASE_SECTIONS_B1_CU_90.map((base) => {
+    const sNum = base.s;
+    const izTabla = +(base.izBase * methodMult * phaseMult * matMult * insulMult).toFixed(1);
+    const izCorregida = +(izTabla * kTotal * nPorFase).toFixed(2);
+
+    // Real conductor operating temperature Tc (°C)
+    const loadRatio = Math.min(1.5, ib / Math.max(1, izCorregida));
+    const tRealCond = +(
+      tAmbNum +
+      (tMaxCond - tAmbNum) * Math.pow(Math.min(1.2, loadRatio), 2)
+    ).toFixed(2);
+
+    // Thermally corrected conductivity at real operating temperature (or normative max temp for sizing)
+    const gammaReal = +(gamma20 / (1 + alphaTemp * (tRealCond - 20))).toFixed(2);
+    const gammaNormative =
+      tipoConductor === 'cobre' ? (is90C ? 44 : 48) : is90C ? 28 : 30;
+
+    // Resistance R and Reactance X of the line (Ω)
+    const rLineOhm = length / (gammaNormative * sNum * nPorFase);
+    const xLineOhm = (base.xOhmKm * (length / 1000)) / nPorFase;
+    const sinPhi = Math.sqrt(Math.max(0, 1 - cpf * cpf));
+
+    // Voltage drop ΔU (V and %) including R·cosφ + X·sinφ
+    const factorRed = isMono ? 2 : Math.sqrt(3);
+    const caidaVolts = factorRed * ib * (rLineOhm * cpf + xLineOhm * sinPhi);
+    const caidaPct = (caidaVolts / v) * 100;
+
+    // Short-circuit capability for this section
+    const k2S2_MA2s = +((Math.pow(kAdiabatic * sNum * nPorFase, 2)) / 1e6).toFixed(2);
+    const iccMaxCableKa = +((kAdiabatic * sNum * nPorFase) / (1000 * Math.sqrt(tIccSec))).toFixed(2);
+
+    // Active power loss in line ΔP (W)
+    const nPhasesCurrent = isMono ? 2 : 3;
+    const powerLossWatts = +(nPhasesCurrent * Math.pow(ib, 2) * rLineOhm).toFixed(2);
+
+    // Normative Checks:
+    // 1. Minimum section (e.g. 1.5 mm² or user min, Al >= 16 mm² often recommended)
+    const okMinSection = sNum >= sMinReq;
+    // 2. Thermal overload: Ib <= Ir <= Iz'
+    const okThermal = ib <= effectiveIr && effectiveIr <= izCorregida;
+    // 3. Voltage drop: ΔU% <= ΔUmax%
+    const okVoltageDrop = caidaPct <= maxDropPct;
+    // 4. Short-circuit: Icc_prevista <= Icc_max_cable
+    const okShortCircuit = iccPrevistaKa <= iccMaxCableKa;
+
+    const passAll = okMinSection && okThermal && okVoltageDrop && okShortCircuit;
+    const ratioPct = Math.min(999.9, (ib / Math.max(0.1, izCorregida)) * 100);
+
     return {
-      ...row,
-      iz: izNum.toFixed(2),
-      ibRatio: ratio.toFixed(1),
-      caida: caidaRow.toFixed(2),
-      ir: (isFail ? '---' : intensidadNominal),
-      fail: isFail || caidaRow > parseFloat(caidaMax),
-      pass: !isFail && caidaRow <= parseFloat(caidaMax)
+      s: sNum.toString(),
+      sNum,
+      izTabla: izTabla.toFixed(1),
+      iz: izCorregida.toFixed(2),
+      izNum: izCorregida,
+      ibRatio: ratioPct.toFixed(1),
+      caida: caidaPct.toFixed(2),
+      caidaVolts: caidaVolts.toFixed(2),
+      caidaNum: caidaPct,
+      ir: okThermal ? effectiveIr.toFixed(1) : `${effectiveIr.toFixed(0)}!`,
+      icc: iccMaxCableKa.toFixed(2),
+      iccNum: iccMaxCableKa,
+      tRealCond: tRealCond.toFixed(2),
+      gammaReal: gammaReal.toFixed(1),
+      rLineOhm: rLineOhm.toFixed(4),
+      xLineOhm: xLineOhm.toFixed(4),
+      k2S2: k2S2_MA2s.toFixed(2),
+      powerLossWatts: powerLossWatts.toFixed(2),
+      okMinSection,
+      okThermal,
+      okVoltageDrop,
+      okShortCircuit,
+      fail: !passAll,
+      pass: passAll
     };
   });
 
+  const optimalAutoRow = tableRows.find((r) => r.pass) || null;
+  const activeRow =
+    (selectedManualSection
+      ? tableRows.find((r) => r.s === selectedManualSection)
+      : optimalAutoRow) ||
+    optimalAutoRow ||
+    tableRows[tableRows.length - 1];
+
+  // Neutral & Protective Conductor (CP/PE) sizing for activeRow
+  const sfActiva = activeRow ? activeRow.sNum : 1.5;
+  const snActiva =
+    alimentacion === '3F'
+      ? 0
+      : alimentacion === '3F+N' && harmPct > 33
+      ? BASE_SECTIONS_B1_CU_90.find((b) => b.s >= sfActiva * 1.45)?.s || sfActiva
+      : sfActiva <= 16
+      ? sfActiva
+      : Math.max(16, sfActiva / 2);
+  const scpActiva = computeProtectiveSection(sfActiva);
+
+  const cableDesignation = useMemo(() => {
+    const matStr = tipoConductor === 'cobre' ? 'Cu' : 'Al';
+    const typeName =
+      aislamiento === 'Z1'
+        ? 'RZ1-K / H07Z1-K (AS)'
+        : aislamiento === 'XLPE'
+        ? 'RV-K (XLPE)'
+        : aislamiento === 'EPR'
+        ? 'DN-K (EPR)'
+        : 'H07V-K (PVC)';
+    if (alimentacion === '1F+N') {
+      return `2x(${nPorFase}x${sfActiva}) + 1x${scpActiva}G mm² ${matStr} ${typeName}`;
+    }
+    if (alimentacion === '3F') {
+      return `3x(${nPorFase}x${sfActiva}) + 1x${scpActiva}G mm² ${matStr} ${typeName}`;
+    }
+    return `3x(${nPorFase}x${sfActiva}) + 1x${snActiva}N + 1x${scpActiva}G mm² ${matStr} ${typeName}`;
+  }, [alimentacion, nPorFase, sfActiva, snActiva, scpActiva, tipoConductor, aislamiento]);
+
+  // --- Distribution Panel & Automatic Repartidor Recommendation Engine ---
+  const panelAnalysis = useMemo(() => {
+    const totalCircuits = circuits.length;
+    const sumIb = circuits.reduce(
+      (acc, c) => acc + (parseFloat((c.ib || '0').replace(',', '.')) || 0),
+      0
+    );
+    const maxIn = circuits.reduce(
+      (acc, c) => Math.max(acc, parseFloat((c.in || '0').replace(',', '.')) || 0),
+      25
+    );
+    const totalPowerKw = circuits.reduce(
+      (acc, c) => acc + (parseFloat((c.carga || '0').replace(',', '.')) || 0),
+      0
+    );
+
+    const recommendedIgaCalibre =
+      STANDARD_IN_CALIBRES.find((cal) => cal >= Math.max(maxIn, sumIb * 0.75, 25)) || 63;
+
+    // Count circuits per differential group
+    const groupCounts: Record<string, { count: number; sumIb: number }> = {};
+    panelConfig.differentialGroups.forEach((g) => {
+      groupCounts[g.id] = { count: 0, sumIb: 0 };
+    });
+    groupCounts['DIRECT'] = { count: 0, sumIb: 0 };
+
+    circuits.forEach((c) => {
+      const gid = c.grupoId && groupCounts[c.grupoId] ? c.grupoId : panelConfig.differentialGroups[0]?.id || 'ID1';
+      if (!groupCounts[gid]) groupCounts[gid] = { count: 0, sumIb: 0 };
+      groupCounts[gid].count += 1;
+      groupCounts[gid].sumIb += parseFloat((c.ib || '0').replace(',', '.')) || 0;
+    });
+
+    const maxCircuitsInAnyGroup = Math.max(
+      0,
+      ...Object.values(groupCounts).map((g) => g.count)
+    );
+    const upstreamBranchesFromIga =
+      panelConfig.differentialGroups.length +
+      (groupCounts['DIRECT']?.count || 0) +
+      (panelConfig.spdIncluded ? 1 : 0);
+    const hasParallelCables =
+      nPorFase >= 2 || circuits.some((c) => (parseInt(c.n || '1', 10) || 1) >= 2);
+
+    // Trigger distributor recommendation if >= 4 circuits, > 2 derivations on a single terminal, or parallel conductors per phase
+    const recommendDistributor =
+      totalCircuits >= 4 ||
+      upstreamBranchesFromIga > 2 ||
+      maxCircuitsInAnyGroup > 2 ||
+      hasParallelCables;
+
+    const reasons: string[] = [];
+    if (totalCircuits >= 4) {
+      reasons.push(`El cuadro dispone de ${totalCircuits} circuitos de salida (≥ 4 líneas en paralelo).`);
+    }
+    if (upstreamBranchesFromIga > 2) {
+      reasons.push(
+        `Aguas abajo del IGA concurren ${upstreamBranchesFromIga} derivaciones (Diferenciales + SPD > 2 conexiones por borne).`
+      );
+    }
+    if (maxCircuitsInAnyGroup > 2) {
+      reasons.push(
+        `Existen grupos diferenciales que alimentan hasta ${maxCircuitsInAnyGroup} circuitos en paralelo (> 2 derivaciones por borne).`
+      );
+    }
+    if (hasParallelCables) {
+      reasons.push(`Se han configurado múltiples conductores por fase (n ≥ 2) que exigen bornes repartidores.`);
+    }
+
+    const effectiveIgaNum = panelConfig.igaAutoSize
+      ? recommendedIgaCalibre
+      : parseInt(panelConfig.igaCalibre, 10) || recommendedIgaCalibre;
+
+    const distributorCalibre =
+      [63, 100, 125, 160, 250, 400].find((cal) => cal >= Math.max(effectiveIgaNum, sumIb * 0.85, 63)) || 125;
+
+    const minHolesPerBar = Math.max(6, totalCircuits + panelConfig.differentialGroups.length + 2);
+    const distributorModel =
+      distributorCalibre >= 125 || hasParallelCables || panelConfig.differentialGroups.length >= 2
+        ? `Bloque Repartidor Modular ${panelConfig.igaPoles} ${distributorCalibre}A (${minHolesPerBar} salidas/barra · UNE-EN 61439-1)`
+        : `Peine Embarrado de Distribución ${panelConfig.igaPoles} ${distributorCalibre}A`;
+
+    // Selectivity validation between IGA and every saved circuit in the panel
+    const circuitSelectivityMap: Record<string, SelectivityValidationResult> = {};
+    let selectivityFailCount = 0;
+    let selectivityPartialCount = 0;
+
+    circuits.forEach((c) => {
+      const piaInNum = parseFloat((c.in || '16').replace(',', '.')) || 16;
+      const iccCircKa = parseFloat((c.iccPrevista || '6.0').replace(',', '.')) || 6.0;
+      const res = validateProtectionSelectivity({
+        igaIn: effectiveIgaNum,
+        igaCurve: panelConfig.igaCurve || 'C',
+        igaTimeDelayMs: panelConfig.igaTimeDelayMs || 0,
+        piaIn: piaInNum,
+        piaCurve: c.curva || 'C',
+        piaType: c.tipoProteccion || 'Interruptor automático',
+        iccKa: iccCircKa
+      });
+      circuitSelectivityMap[c.id] = res;
+      if (res.status === 'fail') selectivityFailCount++;
+      else if (res.status === 'partial') selectivityPartialCount++;
+    });
+
+    return {
+      totalCircuits,
+      sumIb,
+      totalPowerKw,
+      recommendedIgaCalibre,
+      effectiveIgaNum,
+      groupCounts,
+      recommendDistributor,
+      reasons,
+      distributorCalibre,
+      minHolesPerBar,
+      distributorModel,
+      circuitSelectivityMap,
+      selectivityFailCount,
+      selectivityPartialCount
+    };
+  }, [circuits, panelConfig, nPorFase]);
+
+  const activeSelectivity = useMemo(
+    () =>
+      validateProtectionSelectivity({
+        igaIn: panelAnalysis.effectiveIgaNum,
+        igaCurve: panelConfig.igaCurve || 'C',
+        igaTimeDelayMs: panelConfig.igaTimeDelayMs || 0,
+        piaIn: effectiveIn,
+        piaCurve: tipoProteccion === 'Fusible gG' ? 'gG' : curvaProteccion,
+        piaType: tipoProteccion,
+        iccKa: iccPrevistaKa > 0 ? iccPrevistaKa : 6.0
+      }),
+    [
+      panelAnalysis.effectiveIgaNum,
+      panelConfig.igaCurve,
+      panelConfig.igaTimeDelayMs,
+      effectiveIn,
+      curvaProteccion,
+      tipoProteccion,
+      iccPrevistaKa
+    ]
+  );
+
   const handleSave = () => {
-    const passingRow = tableRows.find(r => r.pass);
+    const targetRow = activeRow;
+    const matLabel = tipoConductor === 'cobre' ? 'Cu' : 'Al';
+    const condPrefix =
+      alimentacion === '1F+N' ? '1F+N+CP' : alimentacion === '3F' ? '3F+CP' : '3F+N+CP';
+
     const newRecord: CircuitRecord = {
-      id: circuitoId.trim() || `C${circuits.length + 1}`,
+      id: circuitoId.trim() || `C${circuits.length + 1} - Línea BT`,
       metodo: metodo,
-      conductores: (alimentacion) + ' ' + (calculoConductor === 'unipolar' ? '1x' : '') + (tipoConductor === 'cobre' ? 'Cu' : 'Al'),
-      tension: tension.replace('.', ','),
+      conductores: `${condPrefix} ${matLabel}`,
+      tension: v.toFixed(1).replace('.', ','),
       aisl: aislamiento,
-      seccion: passingRow ? `${passingRow.s} mm²` : '---',
+      seccion: targetRow ? `${targetRow.s} mm²` : '---',
       n: conductoresPorFase,
-      carga: potencia.replace('.', ','),
+      carga: pCalculadaKw.toFixed(2).replace('.', ','),
       ud: 'kW',
-      fu: '1,0',
-      fs: '1,0',
+      fu: parseFloat(fu).toFixed(2).replace('.', ','),
+      fs: parseFloat(fs).toFixed(2).replace('.', ','),
       ib: ib.toFixed(2).replace('.', ','),
-      in: intensidadNominal,
-      xin: '1,0',
-      ir: passingRow ? passingRow.ir.replace('.', ',') : '---',
-      iz: passingRow ? passingRow.iz.replace('.', ',') : '---',
-      l: longitud.replace('.', ','),
-      deltaU: passingRow ? passingRow.caida.replace('.', ',') : '---'
+      in: effectiveIn.toString(),
+      xin: irMult.toFixed(2).replace('.', ','),
+      ir: effectiveIr.toFixed(1).replace('.', ','),
+      iz: targetRow ? targetRow.iz.replace('.', ',') : '---',
+      l: length.toFixed(1).replace('.', ','),
+      deltaU: targetRow ? targetRow.caida.replace('.', ',') : '---',
+      grupoId: grupoId,
+      curva: curvaProteccion,
+      poderCorte: poderCorte,
+      tipoProteccion: tipoProteccion,
+      seccionNeutro: snActiva > 0 ? `${snActiva} mm²` : '---',
+      seccionCp: `${scpActiva} mm²`,
+      cosPhi: cpf.toFixed(2).replace('.', ','),
+      tempAmbiente: tempAmbiente,
+      iccPrevista: iccPrevistaKa.toFixed(1).replace('.', ',')
     };
 
-    const existingIndex = circuits.findIndex(c => c.id.toLowerCase() === newRecord.id.toLowerCase());
+    const existingIndex = circuits.findIndex(
+      (c) => c.id.toLowerCase() === newRecord.id.toLowerCase()
+    );
     if (existingIndex >= 0) {
       const updated = [...circuits];
       updated[existingIndex] = newRecord;
       setCircuits(updated);
-      onShowToast(`Línea "${newRecord.id}" actualizada.`);
+      onShowToast(`Línea "${newRecord.id}" actualizada (${newRecord.seccion} · Grupo ${grupoId}).`);
     } else {
-      setCircuits([newRecord, ...circuits]);
-      onShowToast(`Línea "${newRecord.id}" guardada en la memoria.`);
+      setCircuits([...circuits, newRecord]);
+      setCircuitoId(`C${circuits.length + 2} - Nueva Línea`);
+      onShowToast(`Línea "${newRecord.id}" guardada en el cuadro (${newRecord.seccion} · Grupo ${grupoId}).`);
     }
   };
 
   const handleClear = () => {
-    setCircuitoId(`C${circuits.length + 1} - Línea`);
+    setCircuitoId(`C${circuits.length + 1} - Nueva Línea`);
     setPotencia('5.0');
+    setIntensidadDirecta('21.74');
     setLongitud('20.0');
     setCosPhi('0.85');
-    onShowToast('Formulario restablecido para nuevo cálculo');
+    setFu('1.0');
+    setFs('1.0');
+    setSelectedManualSection(null);
+    onShowToast('Formulario restablecido en modo de cálculo automático');
   };
 
   const handleOpenRecord = (rec: CircuitRecord) => {
     setCircuitoId(rec.id);
     setMetodo(rec.metodo || 'B1');
-    setTension(rec.tension.replace(',', '.'));
-    setAislamiento(rec.aisl || 'Z1');
-    setPotencia(rec.carga.replace(',', '.'));
-    setLongitud(rec.l.replace(',', '.'));
+    setTension((rec.tension || '230').replace(',', '.'));
+    setAislamiento((rec.aisl as any) || 'Z1');
+    setPotencia((rec.carga || '5.0').replace(',', '.'));
+    setIntensidadDirecta((rec.ib || '16.0').replace(',', '.'));
+    setLongitud((rec.l || '20.0').replace(',', '.'));
+    setFu((rec.fu || '1.0').replace(',', '.'));
+    setFs((rec.fs || '1.0').replace(',', '.'));
+    setConductoresPorFase(rec.n || '1');
     setIntensidadNominal(rec.in || '25');
+    setModoIn('manual');
+    if (rec.grupoId) setGrupoId(rec.grupoId);
+    if (rec.curva) setCurvaProteccion(rec.curva as any);
+    if (rec.poderCorte) setPoderCorte(rec.poderCorte as any);
+    if (rec.tipoProteccion) setTipoProteccion(rec.tipoProteccion as any);
+    if (rec.cosPhi) setCosPhi(rec.cosPhi.replace(',', '.'));
     if (rec.conductores.includes('1F')) {
       setAlimentacion('1F+N');
-    } else {
+    } else if (rec.conductores.includes('3F+N')) {
       setAlimentacion('3F+N');
+    } else {
+      setAlimentacion('3F');
+    }
+    setTipoConductor(rec.conductores.includes('Al') ? 'aluminio' : 'cobre');
+    const secClean = (rec.seccion || '').replace(' mm²', '').trim();
+    if (secClean && BASE_SECTIONS_B1_CU_90.some((b) => b.s.toString() === secClean)) {
+      setSelectedManualSection(secClean);
+    } else {
+      setSelectedManualSection(null);
     }
     setActiveTab('receptor');
-    onShowToast(`Datos de "${rec.id}" cargados en el formulario.`);
+    onShowToast(`Línea "${rec.id}" cargada en el editor.`);
   };
 
   const handleDeleteRecord = (id: string) => {
-    const remaining = circuits.filter(c => c.id !== id);
+    const remaining = circuits.filter((c) => c.id !== id);
     setCircuits(remaining);
-    onShowToast(`Línea "${id}" eliminada del proyecto.`);
+    onShowToast(`Línea "${id}" eliminada del cuadro.`);
+  };
+
+  const handleAddDifferentialGroup = () => {
+    const nextIdx = panelConfig.differentialGroups.length + 1;
+    const newId = `ID${nextIdx}`;
+    const newGroup: DifferentialGroup = {
+      id: newId,
+      name: `Grupo Diferencial ${nextIdx}`,
+      poles: panelConfig.igaPoles,
+      calibre: '40',
+      sensitivity: '30mA',
+      rccbClass: 'A',
+      selective: false
+    };
+    setPanelConfig((prev) => ({
+      ...prev,
+      differentialGroups: [...prev.differentialGroups, newGroup]
+    }));
+    onShowToast(`Diferencial ${newId} añadido al cuadro general.`);
+  };
+
+  const handleUpdateDifferentialGroup = (id: string, patch: Partial<DifferentialGroup>) => {
+    setPanelConfig((prev) => ({
+      ...prev,
+      differentialGroups: prev.differentialGroups.map((g) =>
+        g.id === id ? { ...g, ...patch } : g
+      )
+    }));
+  };
+
+  const handleRemoveDifferentialGroup = (id: string) => {
+    if (panelConfig.differentialGroups.length <= 1) {
+      onShowToast('El cuadro debe mantener al menos un grupo diferencial.');
+      return;
+    }
+    setPanelConfig((prev) => ({
+      ...prev,
+      differentialGroups: prev.differentialGroups.filter((g) => g.id !== id)
+    }));
+    onShowToast(`Diferencial ${id} eliminado.`);
   };
 
   const renderTabContent = () => {
@@ -2301,608 +2828,2178 @@ function AdvancedCircuitScreen({
       case 'condiciones':
         return (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Método de instalación</label>
-                  <div className="relative">
-                    <select 
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" 
-                      value={metodoInstalacion} 
-                      onChange={(e) => setMetodoInstalacion(e.target.value)}
-                    >
-                      <option value="Bajo tubo empotrado">Bajo tubo empotrado</option>
-                      <option value="Multiconductores en conductos">Multiconductores en conductos</option>
-                      <option value="Cables unipolares en aire">Cables unipolares en aire</option>
-                      <option value="Cables enterrados">Cables enterrados</option>
-                    </select>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Método de instalación (ITC-BT-19)
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    value={metodoInstalacion}
+                    onChange={(e) => handleInstallationMethodChange(e.target.value)}
+                  >
+                    <option value="Bajo tubo empotrado en pared aislante">
+                      Bajo tubo empotrado en pared aislante (A1 / A2)
+                    </option>
+                    <option value="Bajo tubo empotrado en obra (mampostería)">
+                      Bajo tubo empotrado en obra / mampostería (B1 / B2)
+                    </option>
+                    <option value="Bajo tubo en superficie o canaleta">
+                      Bajo tubo en superficie o canal protectora (B1 / B2)
+                    </option>
+                    <option value="Adosado directamente a pared o bandeja no perforada">
+                      Adosado a pared o bandeja continua (C)
+                    </option>
+                    <option value="Sobre bandeja perforada o escalera">
+                      Sobre bandeja perforada o escalera al aire (E / F)
+                    </option>
+                    <option value="Cables enterrados bajo tubo (zanja)">
+                      Cables enterrados bajo tubo en zanja (D1)
+                    </option>
+                    <option value="Cables directamente enterrados">
+                      Cables directamente enterrados (D2)
+                    </option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
                 </div>
-                <div className="space-y-1.5 min-w-[300px]">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Disposición de cables</label>
-                  <div className="relative">
-                    <select 
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" 
-                      value={disposicionCables} 
-                      onChange={(e) => setDisposicionCables(e.target.value)}
-                    >
-                      <option value="Agrupados en el aire, superficie, empotrados o embutidos">Agrupados en el aire, superficie, empotrados o embutidos</option>
-                      <option value="En conductos">En conductos</option>
-                      <option value="Sobre bandejas">Sobre bandejas</option>
-                    </select>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                  </div>
+              </div>
+
+              <div className="space-y-1.5 lg:col-span-2">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Disposición de cables
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    value={disposicionCables}
+                    onChange={(e) => setDisposicionCables(e.target.value)}
+                  >
+                    <option value="Agrupados en conducto, superficie, empotrados o bandeja">
+                      Agrupados en el aire, superficie, empotrados o embutidos
+                    </option>
+                    <option value="Una capa en contacto sobre bandeja o pared">
+                      En una capa en contacto mutuo sobre bandeja o pared
+                    </option>
+                    <option value="En conductos o tubos protectores">
+                      En conductos o tubos protectores cerrados
+                    </option>
+                    <option value="En tresbolillo (unipolares trifásicos)">
+                      En tresbolillo (cables unipolares trifásicos)
+                    </option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
                 </div>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <InputField label="Método" value={metodo} onChange={setMetodo} />
-                <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Temperatura ambiente</label>
-                  <div className="relative">
-                    <select 
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" 
-                      value={tempAmbiente} 
-                      onChange={(e) => setTempAmbiente(e.target.value)}
-                    >
-                      {Array.from({ length: 51 }, (_, i) => i + 10).map(t => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">°C</span>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                  </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Método Ref. UNE 60364-5-52
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-primary/10 text-primary border border-primary/30 px-4 py-3 rounded-lg text-sm font-black font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    value={metodo}
+                    onChange={(e) => setMetodo(e.target.value)}
+                  >
+                    <option value="A1">A1 — Unipolar tubo pared aislante</option>
+                    <option value="A2">A2 — Multiconductor tubo pared aislante</option>
+                    <option value="B1">B1 — Unipolar tubo empotrado / superf.</option>
+                    <option value="B2">B2 — Multiconductor tubo empotrado / superf.</option>
+                    <option value="C">C — Adosado a pared / bandeja continua</option>
+                    <option value="D1">D1 — Enterrado bajo tubo o conducto</option>
+                    <option value="D2">D2 — Directamente enterrado</option>
+                    <option value="E">E — Multiconductor bandeja perforada</option>
+                    <option value="F">F — Unipolar bandeja perforada / aire</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-primary pointer-events-none"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Profundidad</label>
-                  <div className="relative">
-                    <select 
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-pointer"
-                      value={profundidad}
-                      onChange={(e) => setProfundidad(e.target.value)}
-                    >
-                      <option value="---">---</option>
-                      <option value="0.7">0.7</option>
-                      <option value="1.0">1.0</option>
-                      <option value="1.5">1.5</option>
-                    </select>
-                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">m</span>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                  </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  {isBuried ? 'Temperatura del terreno' : 'Temperatura ambiente'} (Ft={kTemp.toFixed(2)})
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    value={tempAmbiente}
+                    onChange={(e) => setTempAmbiente(e.target.value)}
+                  >
+                    {Array.from({ length: 11 }, (_, i) => i * 5 + 10).map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                    °C
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1 group relative">
-                    Resistividad térmica 
-                    <Info size={12} className="text-primary cursor-help" />
-                    <div className="absolute bottom-full left-0 mb-2 invisible group-hover:visible bg-[#2c3e50] text-[#f8f9fa] p-4 rounded-lg shadow-xl z-[100] w-[280px] text-[10px] leading-relaxed font-mono border border-white/10 backdrop-blur-sm">
-                      <div className="font-bold border-b border-white/10 pb-2 mb-2 uppercase tracking-widest text-[#95a5a6]">Según la naturaleza del suelo [orientativo]:</div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between"><span>Inundado:</span> <span className="font-bold text-[#2ecc71]">0.40</span></div>
-                        <div className="flex justify-between"><span>Muy húmedo:</span> <span className="font-bold text-[#2ecc71]">0.50</span></div>
-                        <div className="flex justify-between"><span>Húmedo:</span> <span className="font-bold text-[#2ecc71]">0.70</span></div>
-                        <div className="flex justify-between"><span>Ligeramente húmedo:</span> <span className="font-bold text-[#f1c40f]">0.85</span></div>
-                        <div className="flex justify-between"><span>Seco:</span> <span className="font-bold text-[#e67e22]">1.00</span></div>
-                        <div className="flex justify-between"><span>Arcilloso muy seco:</span> <span className="font-bold text-[#e74c3c]">1.20</span></div>
-                        <div className="flex justify-between"><span>Arenoso muy seco:</span> <span className="font-bold text-[#e74c3c]">1.50</span></div>
-                        <div className="flex justify-between"><span>Arenisca:</span> <span className="font-bold text-[#9b59b6]">2.00</span></div>
-                        <div className="flex justify-between"><span>Caliza:</span> <span className="font-bold text-[#9b59b6]">2.50</span></div>
-                        <div className="flex justify-between"><span>Granito:</span> <span className="font-bold text-[#34495e]">3.00</span></div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Profundidad {isBuried ? '(Enterrado D1/D2)' : '(Solo D1/D2)'}
+                </label>
+                <div className="relative">
+                  <select
+                    className={`w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono outline-none appearance-none cursor-pointer ${
+                      !isBuried ? 'opacity-60' : 'ring-1 ring-primary/30'
+                    }`}
+                    value={isBuried ? profundidad : '---'}
+                    onChange={(e) => setProfundidad(e.target.value)}
+                  >
+                    <option value="---">---</option>
+                    <option value="0.5">0.5</option>
+                    <option value="0.7">0.7</option>
+                    <option value="0.8">0.8</option>
+                    <option value="1.0">1.0</option>
+                    <option value="1.2">1.2</option>
+                    <option value="1.5">1.5</option>
+                  </select>
+                  <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                    m
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1 group relative">
+                  Resistividad térmica
+                  <Info size={12} className="text-primary cursor-help" />
+                  <div className="absolute bottom-full right-0 mb-2 invisible group-hover:visible bg-[#0f172a] text-white p-4 rounded-lg shadow-xl z-[100] w-[270px] text-[10px] leading-relaxed font-mono border border-white/10">
+                    <div className="font-bold border-b border-white/10 pb-1.5 mb-2 uppercase tracking-widest text-sky-400">
+                      Naturaleza del terreno (K·m/W):
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span>Terreno muy húmedo:</span>
+                        <span className="font-bold text-emerald-400">0.40 - 0.70</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Terreno normal / seco:</span>
+                        <span className="font-bold text-amber-400">1.00 - 1.50</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Arenisca / Caliza seca:</span>
+                        <span className="font-bold text-rose-400">2.00 - 2.50</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Granito / Roca seca:</span>
+                        <span className="font-bold text-purple-400">3.00</span>
                       </div>
                     </div>
+                  </div>
+                </label>
+                <div className="relative">
+                  <select
+                    className={`w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono outline-none appearance-none cursor-pointer ${
+                      !isBuried ? 'opacity-60' : 'ring-1 ring-primary/30'
+                    }`}
+                    value={isBuried ? resistividadTermica : '---'}
+                    onChange={(e) => setResistividadTermica(e.target.value)}
+                  >
+                    <option value="---">---</option>
+                    <option value="0.4">0.4</option>
+                    <option value="0.7">0.7</option>
+                    <option value="1.0">1.0</option>
+                    <option value="1.5">1.5</option>
+                    <option value="2.0">2.0</option>
+                    <option value="2.5">2.5</option>
+                    <option value="3.0">3.0</option>
+                  </select>
+                  <span className="absolute right-9 top-1/2 -translate-y-1/2 text-xs font-bold text-on-surface-variant pointer-events-none">
+                    K·m/W
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/30 mt-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 border-b border-outline-variant/20 pb-2">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                  Cortocircuito y Opciones de Conductor (UNE 60364-4-43)
+                </h4>
+                <span className="text-xs font-mono font-bold text-primary bg-primary/10 px-2.5 py-1 rounded">
+                  Constante adiabática K = {kAdiabatic} · Smín,cc = {sMinCortocircuito.toFixed(2)} mm²
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
+                <InputField
+                  label="Cortocircuito previsto (Icc)"
+                  value={icc}
+                  onChange={setIcc}
+                  unit="kA"
+                />
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Duración despeje (t)
                   </label>
                   <div className="relative">
-                    <select 
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-pointer"
-                      value={resistividadTermica}
-                      onChange={(e) => setResistividadTermica(e.target.value)}
+                    <select
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono outline-none appearance-none cursor-pointer"
+                      value={duracionIcc}
+                      onChange={(e) => setDuracionIcc(e.target.value)}
                     >
-                      <option value="---">---</option>
-                      <option value="0.4">0.4</option>
+                      <option value="0.05">0.05</option>
+                      <option value="0.1">0.1</option>
+                      <option value="0.2">0.2</option>
+                      <option value="0.5">0.5</option>
                       <option value="1.0">1.0</option>
-                      <option value="2.5">2.5</option>
+                      <option value="3.0">3.0</option>
                     </select>
-                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-xs font-bold text-on-surface-variant pointer-events-none">K·m/W</span>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                      s
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
                 </div>
-             </div>
-             
-             <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/30 mt-6 shadow-sm">
-                <h4 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-outline-variant/20 pb-2 text-on-surface-variant">Cortocircuito</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
-                    <InputField label="Cortocircuito kA" value={icc} onChange={setIcc} unit="kA" />
-                    <div className="space-y-1.5">
-                      <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">Duración Icc</label>
-                      <div className="relative">
-                        <select 
-                          className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-pointer"
-                          value={duracionIcc}
-                          onChange={(e) => setDuracionIcc(e.target.value)}
-                        >
-                          <option value="0.1">0.1</option>
-                          <option value="0.5">0.5</option>
-                          <option value="1.0">1.0</option>
-                        </select>
-                        <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">s</span>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-3 text-sm font-medium pb-2 border-l border-outline-variant/20 pl-4">
-                        <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                          <input 
-                            type="radio" 
-                            name="tipoCalculo" 
-                            checked={tipoCalculo === 'potencia'} 
-                            onChange={() => setTipoCalculo('potencia')}
-                            className="w-4 h-4 accent-primary" 
-                          /> Potencia
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                          <input 
-                            type="radio" 
-                            name="tipoCalculo" 
-                            checked={tipoCalculo === 'intensidad'} 
-                            onChange={() => setTipoCalculo('intensidad')}
-                            className="w-4 h-4 accent-primary" 
-                          /> Intensidad
-                        </label>
-                    </div>
-                    <div className="flex flex-col gap-3 text-sm font-medium pb-2">
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                            <input 
-                              type="radio" 
-                              name="tipoConductor" 
-                              checked={tipoConductor === 'cobre'} 
-                              onChange={() => setTipoConductor('cobre')}
-                              className="w-4 h-4 accent-primary" 
-                            /> Cobre
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                            <input 
-                              type="radio" 
-                              name="tipoConductor" 
-                              checked={tipoConductor === 'aluminio'} 
-                              onChange={() => setTipoConductor('aluminio')}
-                              className="w-4 h-4 accent-primary" 
-                            /> Aluminio
-                          </label>
-                        </div>
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                            <input 
-                              type="radio" 
-                              name="calculoConductor" 
-                              checked={calculoConductor === 'unipolar'} 
-                              onChange={() => setCalculoConductor('unipolar')}
-                              className="w-4 h-4 accent-primary" 
-                            /> Unipolar
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer text-on-surface">
-                            <input 
-                              type="radio" 
-                              name="calculoConductor" 
-                              checked={calculoConductor === 'multiconductor'} 
-                              onChange={() => setCalculoConductor('multiconductor')}
-                              className="w-4 h-4 accent-primary" 
-                            /> Multiconductor
-                          </label>
-                        </div>
-                    </div>
-                </div>
-             </div>
 
-             <div className="flex gap-2 items-center bg-surface-container px-4 py-2 rounded-lg border border-outline-variant/30 w-fit">
-                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant pr-4 border-r border-outline-variant/30">Resumen</span>
-                <span className="text-sm font-mono font-bold text-primary pl-2">{tableRows.find(r => r.pass)?.s || '---'}</span>
-             </div>
+                <div className="flex flex-col gap-3 text-sm font-medium pb-1 border-l border-outline-variant/20 pl-4">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                    Magnitud de entrada
+                  </span>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="tipoCalculo"
+                        checked={tipoCalculo === 'potencia'}
+                        onChange={() => setTipoCalculo('potencia')}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Potencia (kW)
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="tipoCalculo"
+                        checked={tipoCalculo === 'intensidad'}
+                        onChange={() => setTipoCalculo('intensidad')}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Intensidad (A)
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2.5 text-sm font-medium pb-1">
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="tipoConductor"
+                        checked={tipoConductor === 'cobre'}
+                        onChange={() => setTipoConductor('cobre')}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Cobre (Cu)
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="tipoConductor"
+                        checked={tipoConductor === 'aluminio'}
+                        onChange={() => setTipoConductor('aluminio')}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Aluminio (Al)
+                    </label>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="calculoConductor"
+                        checked={calculoConductor === 'unipolar'}
+                        onChange={() => {
+                          setCalculoConductor('unipolar');
+                          handleInstallationMethodChange(metodoInstalacion, 'unipolar');
+                        }}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Unipolar
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-on-surface font-semibold">
+                      <input
+                        type="radio"
+                        name="calculoConductor"
+                        checked={calculoConductor === 'multiconductor'}
+                        onChange={() => {
+                          setCalculoConductor('multiconductor');
+                          handleInstallationMethodChange(metodoInstalacion, 'multiconductor');
+                        }}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      Multiconductor
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         );
+
       case 'receptor':
         return (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
-                <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Alimentación</label>
-                  <div className="relative">
-                    <select 
-                      value={alimentacion}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setAlimentacion(val);
-                        if (val === '1F+N') {
-                          setTension('230.0');
-                        } else {
-                          setTension('400.0');
-                        }
-                      }}
-                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none"
+            {/* Top row: Supply, Voltage, Insulation, Differential Group Assignment */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Alimentación
+                </label>
+                <div className="relative">
+                  <select
+                    value={alimentacion}
+                    onChange={(e) => {
+                      const val = e.target.value as '3F+N' | '3F' | '1F+N';
+                      setAlimentacion(val);
+                      if (val === '1F+N') {
+                        setTension('230.0');
+                      } else {
+                        setTension('400.0');
+                      }
+                    }}
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="3F+N">3F+N (Trifásica con Neutro)</option>
+                    <option value="3F">3F (Trifásica sin Neutro)</option>
+                    <option value="1F+N">1F+N (Monofásica)</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Tensión nominal*
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={tension}
+                    onChange={(e) => setTension(e.target.value)}
+                    className="w-full bg-surface-container px-4 py-2.5 rounded-lg border border-transparent font-mono font-bold text-sm text-on-surface focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                    V
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-primary uppercase tracking-wider px-1 block">
+                  {alimentacion === '1F+N' ? 'MONOFÁSICA 230V' : 'TRIFÁSICA 400V'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Aislamiento cable ({is90C ? '90 °C' : '70 °C'})
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    value={aislamiento}
+                    onChange={(e) => setAislamiento(e.target.value as any)}
+                  >
+                    <option value="Z1">Z1 — Poliolefina Libre Halógenos (AS) 90°C</option>
+                    <option value="XLPE">XLPE — Polietileno Reticulado (RV-K) 90°C</option>
+                    <option value="PVC">PVC — Policloruro de Vinilo (H07V-K) 70°C</option>
+                    <option value="EPR">EPR — Etileno Propileno 90°C</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-primary uppercase tracking-wider flex items-center justify-between">
+                  <span>Grupo Diferencial (Cuadro)</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('cuadro')}
+                    className="text-[10px] underline hover:opacity-80 cursor-pointer"
+                  >
+                    Configurar ID
+                  </button>
+                </label>
+                <div className="relative">
+                  <select
+                    value={grupoId}
+                    onChange={(e) => setGrupoId(e.target.value)}
+                    className="w-full bg-primary/10 border border-primary/30 text-primary px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                  >
+                    {panelConfig.differentialGroups.map((grp) => (
+                      <option key={grp.id} value={grp.id}>
+                        {grp.id} — {grp.name} ({grp.poles} {grp.calibre}A {grp.sensitivity})
+                      </option>
+                    ))}
+                    <option value="DIRECT">Directo a Repartidor / Embarrado General</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-primary pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Second row: Load Power/Current, CosPhi, Harmonics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <InputField label="N° Receptores*" value={numero} onChange={setNumero} />
+              {tipoCalculo === 'potencia' ? (
+                <div className="space-y-1">
+                  <InputField
+                    label="Potencia unitaria*"
+                    value={potencia}
+                    onChange={setPotencia}
+                    unit="kW"
+                  />
+                  <span className="text-[11px] font-mono text-on-surface-variant px-1 block">
+                    Ib calculada: <strong className="text-primary">{ib.toFixed(2)} A</strong>
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <InputField
+                    label="Intensidad Ib unitaria*"
+                    value={intensidadDirecta}
+                    onChange={setIntensidadDirecta}
+                    unit="A"
+                  />
+                  <span className="text-[11px] font-mono text-on-surface-variant px-1 block">
+                    P equivalente: <strong className="text-primary">{pCalculadaKw.toFixed(2)} kW</strong>
+                  </span>
+                </div>
+              )}
+              <InputField label="Cos φ*" value={cosPhi} onChange={setCosPhi} />
+              <div className="space-y-1.5">
+                <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                  Tercer armónico (UNE B.52)
+                </label>
+                <div className="relative">
+                  <select
+                    value={tercerArmonico}
+                    onChange={(e) => setTercerArmonico(e.target.value)}
+                    className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="0.0">0 % (Sin armónicos relevantes)</option>
+                    <option value="20.0">15 % - 33 % (Fc = 0.86)</option>
+                    <option value="40.0">33 % - 45 % (Dimensionado por Neutro)</option>
+                    <option value="50.0">&gt; 45 % (Cargas no lineales severas)</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Third row: Fu, Fs, Length, Max Voltage Drop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <InputField label="Factor utilización (Fu)*" value={fu} onChange={setFu} />
+              <InputField
+                label="Factor simultaneidad (Fs)*"
+                value={fs}
+                onChange={setFs}
+              />
+              <InputField label="Longitud línea (L)*" value={longitud} onChange={setLongitud} unit="m" />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Caída tensión máx. (ΔUmáx)*
+                  </label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCaidaMax('3.0')}
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded cursor-pointer ${
+                        caidaMax === '3.0'
+                          ? 'bg-primary text-white font-bold'
+                          : 'bg-surface-container text-on-surface-variant'
+                      }`}
+                      title="REBT ITC-BT-19 Alumbrado (3%)"
                     >
-                      <option value="3F+N">3F+N (Trifásica)</option>
-                      <option value="1F+N">1F+N (Monofásica)</option>
-                    </select>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                      3% Alum
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCaidaMax('5.0')}
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded cursor-pointer ${
+                        caidaMax === '5.0'
+                          ? 'bg-primary text-white font-bold'
+                          : 'bg-surface-container text-on-surface-variant'
+                      }`}
+                      title="REBT ITC-BT-19 Otros usos / Fuerza (5%)"
+                    >
+                      5% Fuerza
+                    </button>
                   </div>
                 </div>
-                
-                <div className="space-y-1.5">
-                   <div className="flex justify-between items-end">
-                     <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Tensión*</label>
-                   </div>
-                   <div className="relative group">
-                     <input 
-                       type="number" 
-                       value={tension}
-                       onChange={(e) => setTension(e.target.value)}
-                       className="w-full bg-surface-container px-4 py-2.5 rounded-lg border border-transparent font-medium text-sm text-on-surface focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-on-surface-variant/40 hover:bg-surface-container-high"
-                     />
-                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none select-none">
-                       V
-                     </span>
-                   </div>
-                   <span className="text-[10px] font-bold text-secondary-container uppercase tracking-wider px-1">
-                     {alimentacion === '1F+N' ? 'MONOFÁSICA' : 'TRIFÁSICA'}
-                   </span>
-                 </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={caidaMax}
+                    onChange={(e) => setCaidaMax(e.target.value)}
+                    className="w-full bg-surface-container px-4 py-2.5 rounded-lg border border-transparent font-mono font-bold text-sm text-on-surface focus:border-primary focus:bg-surface outline-none"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                    %
+                  </span>
+                </div>
+              </div>
+            </div>
 
+            {/* Protection & Grouping Box */}
+            <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/30 mt-6 shadow-sm space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 pb-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  Protección Magnetotérmica / Fusible y Agrupamiento de Canalización
+                </h4>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModoIn('auto')}
+                    className={`px-2.5 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                      modoIn === 'auto'
+                        ? 'bg-primary text-white'
+                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Calibre In Automático ({autoInNumber} A)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModoIn('manual')}
+                    className={`px-2.5 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                      modoIn === 'manual'
+                        ? 'bg-primary text-white'
+                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Calibre In Manual
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
-                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">Aislamiento <Info size={12}/></label>
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Dispositivo de Protección
+                  </label>
                   <div className="relative">
-                    <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" value={aislamiento} onChange={(e) => setAislamiento(e.target.value)}>
-                      <option>Z1</option>
-                      <option>PVC</option>
-                      <option>XLPE</option>
+                    <select
+                      value={tipoProteccion}
+                      onChange={(e) => setTipoProteccion(e.target.value as any)}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="Interruptor automático">Interruptor automático (PIA)</option>
+                      <option value="Guardamotor">Guardamotor magnetotérmico</option>
+                      <option value="Fusible gG">Fusible calibrado gG</option>
                     </select>
-                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
                 </div>
-             </div>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <InputField label="Número*" value={numero} onChange={setNumero} />
-                <InputField label="Potencia*" value={potencia} onChange={setPotencia} unit="kW" />
-                <InputField label="Cos φ*" value={cosPhi} onChange={setCosPhi} />
-                <InputField label="Tercer armónico" value="0.0" onChange={() => {}} unit="%" />
-             </div>
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Intensidad nominal (In)
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                      value={effectiveIn.toString()}
+                      onChange={(e) => {
+                        setModoIn('manual');
+                        setIntensidadNominal(e.target.value);
+                      }}
+                    >
+                      {STANDARD_IN_CALIBRES.map((cal) => (
+                        <option key={cal} value={cal}>
+                          {cal}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                      A
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
+                  </div>
+                </div>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <InputField label="Fu*" value="1.0" onChange={() => {}} />
-                <InputField label="Fs*" value="1.0" onChange={() => {}} />
-                <InputField label="Longitud*" value={longitud} onChange={setLongitud} unit="m" />
-                <InputField label="Caída tensión máxima*" value={caidaMax} onChange={setCaidaMax} unit="%" />
-             </div>
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Curva y Poder de Corte
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={curvaProteccion}
+                      onChange={(e) => setCurvaProteccion(e.target.value as any)}
+                      className="bg-surface-container px-3 py-3 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="B">Curva B</option>
+                      <option value="C">Curva C</option>
+                      <option value="D">Curva D</option>
+                      <option value="MA">Curva MA</option>
+                    </select>
+                    <select
+                      value={poderCorte}
+                      onChange={(e) => setPoderCorte(e.target.value as any)}
+                      className="bg-surface-container px-3 py-3 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="6kA">6 kA</option>
+                      <option value="10kA">10 kA</option>
+                      <option value="15kA">15 kA</option>
+                      <option value="25kA">25 kA</option>
+                    </select>
+                  </div>
+                </div>
 
-             <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/30 mt-6 shadow-sm">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Protección</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none">
-                        <option>Interruptor automático</option>
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Regulación térmica Ir (x In)
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={irFactor}
+                      onChange={(e) => setIrFactor(e.target.value)}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="1.00">1.00 (Ir = {effectiveIn.toFixed(1)} A)</option>
+                      <option value="0.90">0.90 (Ir = {(effectiveIn * 0.9).toFixed(1)} A)</option>
+                      <option value="0.80">0.80 (Ir = {(effectiveIn * 0.8).toFixed(1)} A)</option>
+                      <option value="0.70">0.70 (Ir = {(effectiveIn * 0.7).toFixed(1)} A)</option>
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Intensidad nominal</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" value={intensidadNominal} onChange={(e) => setIntensidadNominal(e.target.value)}>
-                        <option>125</option>
-                        <option>160</option>
-                      </select>
-                      <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">A</span>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Ir (x In)</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none">
-                        <option>1.00</option>
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
-                  </div>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Conductores por fase</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none" value={conductoresPorFase} onChange={(e) => setConductoresPorFase(e.target.value)}>
-                        <option>1</option>
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Conductores por fase (n)
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                      value={conductoresPorFase}
+                      onChange={(e) => setConductoresPorFase(e.target.value)}
+                    >
+                      <option value="1">1 conductor / fase</option>
+                      <option value="2">2 conductores en paralelo / fase</option>
+                      <option value="3">3 conductores en paralelo / fase</option>
+                      <option value="4">4 conductores en paralelo / fase</option>
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Sección mínima</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none">
-                        <option>1.5</option>
-                      </select>
-                      <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">mm²</span>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Sección mínima admisible
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={seccionMinima}
+                      onChange={(e) => setSeccionMinima(e.target.value)}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="1.5">1.5</option>
+                      <option value="2.5">2.5</option>
+                      <option value="4">4.0</option>
+                      <option value="6">6.0</option>
+                      <option value="10">10.0</option>
+                      <option value="16">16.0</option>
+                      <option value="25">25.0</option>
+                    </select>
+                    <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">
+                      mm²
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Separación</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-not-allowed opacity-70" disabled>
-                        <option>---</option>
-                      </select>
-                      <span className="absolute right-9 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant pointer-events-none">m</span>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Separación entre cables
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={separacion}
+                      onChange={(e) => setSeparacion(e.target.value)}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="En contacto (0 m)">En contacto (0 m)</option>
+                      <option value="1 diámetro (De)">Separados 1 diámetro (De)</option>
+                      <option value="0.125 m">0.125 m</option>
+                      <option value="0.25 m">0.25 m</option>
+                      <option value="0.50 m">0.50 m</option>
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
-                  
-                  <div className="space-y-1.5">
-                    <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">Circuitos adicionales</label>
-                    <div className="relative">
-                      <select className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary outline-none appearance-none">
-                        <option>3</option>
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-label text-[0.75rem] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Circuitos adicionales agrupados
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={circuitosAdicionales}
+                      onChange={(e) => handleCircuitosAdicionalesChange(e.target.value)}
+                      className="w-full bg-surface-container px-4 py-3 rounded-lg text-sm font-bold font-mono focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i).map((numAdd) => (
+                        <option key={numAdd} value={numAdd}>
+                          {numAdd} ({numAdd + 1} circuito{numAdd + 1 > 1 ? 's' : ''} total)
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
+                    />
                   </div>
-                  <InputField label={<span className="flex items-center gap-1">Fr agrupamiento* <Info size={12} className="inline"/></span>} value="0.65" onChange={() => {}} />
-                  <InputField label={<span className="flex items-center gap-1">Fr adicional* <Info size={12} className="inline"/></span>} value="1.0" onChange={() => {}} />
-               </div>
-             </div>
+                </div>
+
+                <InputField
+                  label="Fr agrupamiento (UNE B.52.17)*"
+                  value={frAgrupamiento}
+                  onChange={setFrAgrupamiento}
+                />
+                <InputField
+                  label="Fr adicional (solar/otros)*"
+                  value={frAdicional}
+                  onChange={setFrAdicional}
+                />
+              </div>
+
+              {/* Validación en vivo de Selectividad IGA <-> PIA */}
+              <div
+                className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                  activeSelectivity.status === 'total'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900'
+                    : activeSelectivity.status === 'partial'
+                    ? 'bg-amber-500/10 border-amber-500/35 text-amber-950'
+                    : 'bg-error/10 border-error/35 text-error'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  {activeSelectivity.status === 'total' ? (
+                    <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle
+                      size={18}
+                      className={`shrink-0 mt-0.5 ${
+                        activeSelectivity.status === 'partial' ? 'text-amber-600' : 'text-error'
+                      }`}
+                    />
+                  )}
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded font-extrabold uppercase tracking-wider text-[10px] ${
+                          activeSelectivity.status === 'total'
+                            ? 'bg-emerald-600 text-white'
+                            : activeSelectivity.status === 'partial'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-error text-white'
+                        }`}
+                      >
+                        {activeSelectivity.badgeText}
+                      </span>
+                      <span className="font-mono font-bold text-on-surface">
+                        IGA {panelAnalysis.effectiveIgaNum}A Curva {panelConfig.igaCurve}
+                        {(panelConfig.igaTimeDelayMs || 0) > 0
+                          ? ` (Δt=${panelConfig.igaTimeDelayMs}ms)`
+                          : ''}{' '}
+                        ↔ PIA {effectiveIn}A Curva {curvaProteccion}
+                      </span>
+                    </div>
+                    <p className="text-on-surface-variant leading-snug">
+                      {activeSelectivity.shortReason}
+                    </p>
+                    {!activeSelectivity.isFullyCompliant && (
+                      <p className="font-semibold text-on-surface">
+                        Recomendación: {activeSelectivity.recommendation}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('cuadro')}
+                  className="px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/40 text-on-surface font-bold hover:bg-surface-container cursor-pointer whitespace-nowrap shadow-sm"
+                >
+                  Ajustar Cabecera IGA
+                </button>
+              </div>
+
+              {nPorFase >= 2 && (
+                <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Conductores en paralelo ({nPorFase} por fase):</strong> Se recomienda instalar{' '}
+                      <strong>{panelAnalysis.distributorModel}</strong> para garantizar el reparto equitativo de corriente en bornes.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('cuadro')}
+                    className="px-3 py-1.5 rounded bg-amber-600 text-white font-bold whitespace-nowrap cursor-pointer"
+                  >
+                    Ver Repartidor
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         );
-      case 'seccion':
+
+      case 'seccion': {
+        const selectedDiff = panelConfig.differentialGroups.find((g) => g.id === grupoId);
+        const i2Breaker = +(1.45 * effectiveIr).toFixed(2);
+        const maxIz145 = +(1.45 * (activeRow?.izNum || 0)).toFixed(2);
+
         return (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 text-sm p-6 bg-surface-container-lowest rounded-xl border border-outline-variant/30 font-medium font-mono text-on-surface-variant leading-relaxed shadow-sm">
-            <h4 className="flex justify-between items-center mb-6">
-               <span className="font-sans font-bold text-on-surface uppercase tracking-wider text-xs">Memoria de Cálculo</span>
-               <button className="bg-primary text-white p-2 rounded-lg hover:bg-primary-container transition-colors shadow-sm"><Info size={16}/></button>
-            </h4>
-            <p className="flex gap-2 items-center"><ChevronDown size={14} className="rotate-[-90deg] text-primary"/> <strong className="text-on-surface w-40">Sección:</strong> 185 mm²</p>
-            <p className="flex gap-2 items-center"><ChevronDown size={14} className="rotate-[-90deg] text-primary"/> <strong className="text-on-surface w-40">Sección neutro:</strong> 185 mm²</p>
-            <p className="flex gap-2 items-center"><ChevronDown size={14} className="rotate-[-90deg] text-primary"/> <strong className="text-on-surface w-40">Cables:</strong> 4x(1x185) mm²</p>
-            <p className="flex gap-2 items-center"><ChevronDown size={14} className="rotate-[-90deg] text-primary"/> <strong className="text-on-surface w-40">Interruptor auto (In):</strong> 160 A</p>
-            <p className="flex gap-2 items-center mb-6 pb-6 border-b border-outline-variant/20"><ChevronDown size={14} className="rotate-[-90deg] text-primary"/> <strong className="text-on-surface w-40">Regulación:</strong> {intensidadNominal} A (Ir = 1.0 x In)</p>
-            
-            <p className="text-on-surface flex gap-2">· <span className="w-64 text-on-surface-variant">Intensidad (Ib):</span> {ib.toFixed(2)} A</p>
-            <p className="text-on-surface flex gap-2">· <span className="w-64 text-on-surface-variant">Intensidad admisible corregida (Iz'):</span> {tableRows.find(r => r.pass)?.iz || '---'} A</p>
-            <p className="text-on-surface flex gap-2">· <span className="w-64 text-on-surface-variant">Cortocircuito admisible:</span> {tableRows.find(r => r.pass)?.icc || '---'} kA (t=0.1 s)</p>
-            <p className="text-on-surface flex gap-2">· <span className="w-64 text-on-surface-variant">Caída de tensión:</span> {(parseFloat(tableRows.find(r => r.pass)?.caida || '0') * v / 100).toFixed(2)} V, {tableRows.find(r => r.pass)?.caida || '---'}% (ΔU≤{caidaMax} %)</p>
-            <p className="text-on-surface flex gap-2 mb-6 pb-6 border-b border-outline-variant/20">· <span className="w-64 text-on-surface-variant">Tipo cable:</span> H07Z1-K (AS)</p>
-            
-            <p className="flex gap-2">· <span className="w-64">Intensidad admisible (Iz):</span> 296.0 A</p>
-            <p className="flex gap-2">· <span className="w-64">Fc temperatura:</span> 0.87 (tabla B.52.14)</p>
-            <p className="flex gap-2">· <span className="w-64">Fc agrupamiento:</span> 0.65 (tabla B.52.17)</p>
-            <p className="flex gap-2">· <span className="w-64">Fc total:</span> 0.5655</p>
-            <p className="flex gap-2 mb-6 pb-6 border-b border-outline-variant/20">· <span className="w-64 text-on-surface">Iz':</span> 296.0 A x 0.5655 = <strong className="text-on-surface">167.39 A</strong></p>
-            
-            <p className="flex gap-2">· <span className="w-64">Temperatura real conductor:</span> 62.31 °C</p>
-            <p className="flex gap-2">· <span className="w-64">Conductividad:</span> 49.7 m/(Ω·mm²)</p>
-            <p className="flex gap-2">· <span className="w-64">Impedancia:</span> 0.0011 + j0.0008 Ω</p>
-            <p className="flex gap-2">· <span className="w-64">Energía admisible (cable) K²·S²:</span> 452.6 MA²s</p>
-            <p className="flex gap-2 mb-6 pb-6 border-b border-outline-variant/20">· <span className="w-64">Pérdida de potencia:</span> 69.29 W</p>
-            
-            <p className="font-bold text-on-surface mb-2 tracking-widest text-xs uppercase font-sans">Comprobación IEC 60364-4-43:</p>
-            <p className="text-primary-fixed-dim">· Ib ≤ In(Ir) ≤ Iz' ⇒ 144.34 ≤ 160.0 ≤ 167.39</p>
-            <p className="text-primary-fixed-dim">· I2 ≤ 1.45xIz' ⇒ 232.0 A ≤ 242.7 A</p>
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-4 pb-4 border-b border-outline-variant/20">
+              <div>
+                <span className="font-sans font-extrabold text-on-surface uppercase tracking-wider text-xs block">
+                  Memoria de Cálculo Normativa — UNE-HD 60364-5-52 / REBT
+                </span>
+                <span className="font-sans text-xs text-on-surface-variant">
+                  Circuito: <strong className="text-primary">{circuitoId}</strong> · Método{' '}
+                  <strong>{metodo}</strong> ({metodoInstalacion})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedManualSection ? (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-700 font-sans font-bold text-xs">
+                      Sección Forzada Manualmente ({selectedManualSection} mm²)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedManualSection(null)}
+                      className="px-3 py-1 rounded bg-primary text-white font-sans font-bold text-xs cursor-pointer hover:opacity-90"
+                    >
+                      Restablecer Automático ({optimalAutoRow?.s || '---'} mm²)
+                    </button>
+                  </div>
+                ) : (
+                  <span className="px-3 py-1 rounded bg-emerald-500/15 text-emerald-700 font-sans font-bold text-xs flex items-center gap-1.5">
+                    <CheckCircle2 size={14} /> Selección Óptima Automática UNE 60364-5-52
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 pb-6 border-b border-outline-variant/20">
+              <div className="space-y-2">
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Sección de Fase (Sf):</strong>
+                  <span className="text-base font-black text-primary">
+                    {nPorFase > 1 ? `${nPorFase} x ` : ''}
+                    {activeRow?.s || '---'} mm²
+                  </span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Sección de Neutro (Sn):</strong>
+                  <span className="text-on-surface font-bold">
+                    {snActiva > 0 ? `${nPorFase > 1 ? `${nPorFase} x ` : ''}${snActiva} mm²` : 'Sin neutro (3F)'}
+                  </span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Conductor Protec. (PE):</strong>
+                  <span className="text-on-surface font-bold">{scpActiva} mm² (ITC-BT-18)</span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Composición Cable:</strong>
+                  <span className="text-on-surface font-bold text-xs">{cableDesignation}</span>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">{tipoProteccion}:</strong>
+                  <span className="text-on-surface font-bold">
+                    In = {effectiveIn} A · Curva {curvaProteccion} · PdC {poderCorte}
+                  </span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Regulación térmica:</strong>
+                  <span className="text-on-surface font-bold">
+                    Ir = {effectiveIr.toFixed(1)} A ({irFactor} x In)
+                  </span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Grupo Diferencial:</strong>
+                  <span className="text-primary font-bold">
+                    {selectedDiff
+                      ? `${selectedDiff.id} (${selectedDiff.poles} ${selectedDiff.calibre}A · ${selectedDiff.sensitivity} Clase ${selectedDiff.rccbClass})`
+                      : 'Directo a Embarrado / Repartidor General'}
+                  </span>
+                </p>
+                <p className="flex gap-2 items-center">
+                  <ChevronDown size={14} className="rotate-[-90deg] text-primary" />
+                  <strong className="text-on-surface w-48">Potencia de diseño:</strong>
+                  <span className="text-on-surface font-bold">
+                    {pCalculadaKw.toFixed(2)} kW (cos φ = {cpf})
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mb-6 pb-6 border-b border-outline-variant/20">
+              <p className="text-on-surface flex gap-2">
+                · <span className="w-72 text-on-surface-variant">Intensidad de empleo (Ib):</span>
+                <strong>{ib.toFixed(2)} A</strong>
+              </p>
+              <p className="text-on-surface flex gap-2">
+                · <span className="w-72 text-on-surface-variant">Intensidad admisible corregida (Iz'):</span>
+                <strong>{activeRow?.iz || '---'} A</strong>
+              </p>
+              <p className="text-on-surface flex gap-2">
+                · <span className="w-72 text-on-surface-variant">Cortocircuito máx. admisible cable:</span>
+                <strong>
+                  {activeRow?.icc || '---'} kA (t = {duracionIcc} s · Icc prevista = {iccPrevistaKa} kA)
+                </strong>
+              </p>
+              <p className="text-on-surface flex gap-2">
+                · <span className="w-72 text-on-surface-variant">Caída de tensión en línea (ΔU):</span>
+                <strong className={activeRow?.okVoltageDrop ? 'text-emerald-600' : 'text-error'}>
+                  {activeRow?.caidaVolts || '0.00'} V ({activeRow?.caida || '---'} % · Límite ≤ {caidaMax} %)
+                </strong>
+              </p>
+            </div>
+
+            <div className="space-y-1.5 mb-6 pb-6 border-b border-outline-variant/20">
+              <p className="flex gap-2">
+                · <span className="w-72">Intensidad base tabla UNE (Iz, {metodo}):</span>
+                <span className="text-on-surface">{activeRow?.izTabla} A</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Fc temperatura ({tempAmbiente} °C):</span>
+                <span className="text-on-surface">{kTemp.toFixed(3)} (Tabla B.52.14)</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Fc agrupamiento ({parseInt(circuitosAdicionales) + 1} circ.):</span>
+                <span className="text-on-surface">{(kAgrup * kAdic).toFixed(3)} (Tabla B.52.17)</span>
+              </p>
+              {isBuried && (
+                <p className="flex gap-2">
+                  · <span className="w-72">Fc terreno y profundidad ({resistividadTermica} K·m/W):</span>
+                  <span className="text-on-surface">{kTerreno.toFixed(3)}</span>
+                </p>
+              )}
+              {kArmonico < 1 && (
+                <p className="flex gap-2">
+                  · <span className="w-72">Fc 3er armónico ({tercerArmonico}%):</span>
+                  <span className="text-on-surface">{kArmonico.toFixed(3)}</span>
+                </p>
+              )}
+              <p className="flex gap-2">
+                · <span className="w-72">Factor de corrección total (Fc total):</span>
+                <span className="text-on-surface font-bold">{kTotal.toFixed(4)}</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72 text-on-surface">Cálculo Iz' corregida:</span>
+                <span>
+                  {activeRow?.izTabla} A × {kTotal.toFixed(4)}
+                  {nPorFase > 1 ? ` × ${nPorFase} cond.` : ''} ={' '}
+                  <strong className="text-primary">{activeRow?.iz} A</strong>
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-1.5 mb-6 pb-6 border-b border-outline-variant/20">
+              <p className="flex gap-2">
+                · <span className="w-72">Temperatura real estimada en conductor:</span>
+                <span className="text-on-surface">{activeRow?.tRealCond} °C (Máx. {tMaxCond} °C)</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Conductividad a temperatura de servicio:</span>
+                <span className="text-on-surface">{activeRow?.gammaReal} m/(Ω·mm²)</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Impedancia total de la línea (Z = R + jX):</span>
+                <span className="text-on-surface">
+                  {activeRow?.rLineOhm} + j{activeRow?.xLineOhm} Ω
+                </span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Energía pasante admisible (K²·S²):</span>
+                <span className="text-on-surface">{activeRow?.k2S2} MA²s</span>
+              </p>
+              <p className="flex gap-2">
+                · <span className="w-72">Pérdida de potencia activa (Efecto Joule):</span>
+                <span className="text-on-surface">{activeRow?.powerLossWatts} W</span>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="font-bold text-on-surface tracking-widest text-xs uppercase font-sans">
+                Comprobación Reglamentaria IEC 60364-4-43 / REBT:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 font-sans text-xs">
+                <div
+                  className={`p-3 rounded-lg border ${
+                    activeRow?.okThermal
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800'
+                      : 'bg-error/10 border-error/30 text-error'
+                  }`}
+                >
+                  <div className="font-bold uppercase mb-1">1. Sobrecarga (Ib ≤ In ≤ Iz')</div>
+                  <div className="font-mono">
+                    {ib.toFixed(2)} A ≤ {effectiveIr.toFixed(1)} A ≤ {activeRow?.iz} A
+                  </div>
+                  <div className="font-mono text-[11px] opacity-80 mt-0.5">
+                    I2 ({i2Breaker} A) ≤ 1.45·Iz' ({maxIz145} A)
+                  </div>
+                </div>
+
+                <div
+                  className={`p-3 rounded-lg border ${
+                    activeRow?.okVoltageDrop
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800'
+                      : 'bg-error/10 border-error/30 text-error'
+                  }`}
+                >
+                  <div className="font-bold uppercase mb-1">2. Caída de Tensión (ΔU ≤ {caidaMax}%)</div>
+                  <div className="font-mono">
+                    ΔU = {activeRow?.caida}% ({activeRow?.caidaVolts} V) ≤ {caidaMax}%
+                  </div>
+                  <div className="font-mono text-[11px] opacity-80 mt-0.5">
+                    Longitud L = {longitud} m
+                  </div>
+                </div>
+
+                <div
+                  className={`p-3 rounded-lg border ${
+                    activeRow?.okShortCircuit
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800'
+                      : 'bg-error/10 border-error/30 text-error'
+                  }`}
+                >
+                  <div className="font-bold uppercase mb-1">3. Cortocircuito (Icc ≤ Icc,adm)</div>
+                  <div className="font-mono">
+                    {iccPrevistaKa.toFixed(2)} kA ≤ {activeRow?.icc} kA (t={duracionIcc}s)
+                  </div>
+                  <div className="font-mono text-[11px] opacity-80 mt-0.5">
+                    Smín,cc = {sMinCortocircuito.toFixed(2)} mm²
+                  </div>
+                </div>
+
+                <div
+                  className={`p-3 rounded-lg border ${
+                    activeSelectivity.status === 'total'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800'
+                      : activeSelectivity.status === 'partial'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-800'
+                      : 'bg-error/10 border-error/30 text-error'
+                  }`}
+                >
+                  <div className="font-bold uppercase mb-1">4. Selectividad IGA ↔ PIA</div>
+                  <div className="font-bold">{activeSelectivity.badgeText}</div>
+                  <div className="font-mono text-[11px] opacity-90 mt-0.5">
+                    Amperimétrica: {activeSelectivity.amperimetricOk ? 'OK' : 'NO'} · Cronométrica:{' '}
+                    {activeSelectivity.chronometricOk ? 'OK' : 'NO'}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         );
+      }
+
       case 'tabla':
         return (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-x-auto rounded-xl border border-outline-variant/30 shadow-sm bg-surface">
-            <table className="w-full text-center text-sm">
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-surface-container px-4 py-3 rounded-xl border border-outline-variant/30">
+              <div className="text-xs text-on-surface-variant">
+                <strong className="text-on-surface">Selección interactiva UNE-HD 60364-5-52:</strong>{' '}
+                Haz clic en cualquier fila de la tabla para forzar esa sección manualmente, o mantén el cálculo automático.
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedManualSection && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedManualSection(null);
+                      onShowToast('Modo de sección automático UNE 60364-5-52 activado');
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer hover:opacity-90"
+                  >
+                    Volver a Selección Automática ({optimalAutoRow?.s || '---'} mm²)
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-outline-variant/30 shadow-sm bg-surface">
+              <table className="w-full text-center text-sm">
                 <thead>
-                    <tr className="bg-surface-container border-b border-outline-variant/20 text-on-surface-variant font-bold text-[0.7rem] uppercase tracking-wider">
-                        <th className="px-4 py-4">Sf (mm²)</th>
-                        <th className="px-4 py-4">Iz' (A)</th>
-                        <th className="px-4 py-4">Ib/Iz' (%)</th>
-                        <th className="px-4 py-4">Caída (%)</th>
-                        <th className="px-4 py-4">Ir (A)</th>
-                        <th className="px-4 py-4">Icc (kA) [0.1s]</th>
-                    </tr>
+                  <tr className="bg-surface-container border-b border-outline-variant/20 text-on-surface-variant font-bold text-[0.7rem] uppercase tracking-wider">
+                    <th className="px-4 py-3.5">Sf (mm²)</th>
+                    <th className="px-4 py-3.5">Iz tabla (A)</th>
+                    <th className="px-4 py-3.5">Iz' corr. (A)</th>
+                    <th className="px-4 py-3.5">Carga Ib/Iz' (%)</th>
+                    <th className="px-4 py-3.5">Caída ΔU (%)</th>
+                    <th className="px-4 py-3.5">Ir Prot. (A)</th>
+                    <th className="px-4 py-3.5">Icc máx (kA) [{duracionIcc}s]</th>
+                    <th className="px-4 py-3.5">Estado REBT</th>
+                  </tr>
                 </thead>
                 <tbody className="bg-surface-container-lowest divide-y divide-outline-variant/10">
-                    {tableRows.map((row, i) => (
-                      <tr key={i} className="hover:bg-surface-container/30 transition-colors font-mono">
-                          <td className="px-4 py-3 font-bold text-primary">{row.s}</td>
-                          <td className={`px-4 py-3 font-medium ${row.fail ? 'text-error' : 'text-primary'}`}>{row.iz}</td>
-                          <td className={`px-4 py-3 font-medium ${row.fail ? 'text-error' : 'text-primary'}`}>{row.ibRatio}</td>
-                          <td className={`px-4 py-3 font-medium ${row.fail ? 'text-error' : 'text-primary'}`}>{row.caida}</td>
-                          <td className={`px-4 py-3 font-medium ${row.ir === intensidadNominal ? 'text-tertiary-fixed-dim font-bold' : 'text-on-surface-variant'}`}>{row.ir}</td>
-                          <td className={`px-4 py-3 font-medium ${row.pass ? 'text-tertiary-fixed-dim' : 'text-primary-fixed-dim'}`}>{row.icc}</td>
+                  {tableRows.map((row) => {
+                    const isOptimalAuto = optimalAutoRow?.s === row.s;
+                    const isManualSelected = selectedManualSection === row.s;
+                    const isActive = activeRow?.s === row.s;
+
+                    return (
+                      <tr
+                        key={row.s}
+                        onClick={() => {
+                          setSelectedManualSection(row.s);
+                          onShowToast(`Sección seleccionada manualmente: ${row.s} mm²`);
+                        }}
+                        className={`transition-colors font-mono cursor-pointer ${
+                          isActive
+                            ? 'bg-primary/10 ring-1 ring-inset ring-primary/40 font-bold'
+                            : 'hover:bg-surface-container/50'
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-bold text-primary flex items-center justify-center gap-1.5">
+                          <span>{row.s}</span>
+                          {isOptimalAuto && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-sans text-[9px] font-extrabold uppercase">
+                              Auto
+                            </span>
+                          )}
+                          {isManualSelected && !isOptimalAuto && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white font-sans text-[9px] font-extrabold uppercase">
+                              Manual
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant">{row.izTabla}</td>
+                        <td
+                          className={`px-4 py-3 font-semibold ${
+                            row.okThermal ? 'text-primary' : 'text-error'
+                          }`}
+                        >
+                          {row.iz}
+                        </td>
+                        <td
+                          className={`px-4 py-3 font-medium ${
+                            row.okThermal ? 'text-on-surface' : 'text-error'
+                          }`}
+                        >
+                          {row.ibRatio}%
+                        </td>
+                        <td
+                          className={`px-4 py-3 font-semibold ${
+                            row.okVoltageDrop ? 'text-emerald-600' : 'text-error'
+                          }`}
+                        >
+                          {row.caida}% ({row.caidaVolts}V)
+                        </td>
+                        <td
+                          className={`px-4 py-3 font-medium ${
+                            row.okThermal ? 'text-on-surface' : 'text-error'
+                          }`}
+                        >
+                          {row.ir}
+                        </td>
+                        <td
+                          className={`px-4 py-3 font-medium ${
+                            row.okShortCircuit ? 'text-on-surface' : 'text-error'
+                          }`}
+                        >
+                          {row.icc}
+                        </td>
+                        <td className="px-4 py-3 font-sans text-xs">
+                          {row.pass ? (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 font-bold">
+                              CUMPLE
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-error/15 text-error font-bold">
+                              NO CUMPLE
+                            </span>
+                          )}
+                        </td>
                       </tr>
-                    ))}
+                    );
+                  })}
                 </tbody>
-            </table>
+              </table>
+            </div>
+          </div>
+        );
+
+      case 'cuadro':
+        return (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Top Banner with Quick Action to Transfer to CAD */}
+            <div className="p-5 rounded-xl bg-surface-container border border-outline-variant/30 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="font-headline font-extrabold text-base text-on-surface flex items-center gap-2">
+                  <Shield size={18} className="text-primary" />
+                  Configuración del Cuadro General de Mando y Protección (CGMP)
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Potencia total instalada en {panelAnalysis.totalCircuits} circuitos:{' '}
+                  <strong className="font-mono text-on-surface">
+                    {panelAnalysis.totalPowerKw.toFixed(2)} kW
+                  </strong>{' '}
+                  · Corriente total ΣIb:{' '}
+                  <strong className="font-mono text-primary">
+                    {panelAnalysis.sumIb.toFixed(2)} A
+                  </strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onTransferToCAD(panelConfig)}
+                className="bg-primary hover:bg-primary-container text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-lg transition-all shadow-md cursor-pointer flex items-center gap-2"
+              >
+                <GitBranch size={16} />
+                Pasar Cuadro al Esquema Unifilar CAD
+              </button>
+            </div>
+
+            {/* 1. Cabecera (IGA) & 2. Sobretensiones (SPD) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* IGA Card */}
+              <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-primary">
+                      1. Protección de Cabecera (IGA — ITC-BT-17)
+                    </h4>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Interruptor General Automático de corte omnipolar
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-on-surface cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={panelConfig.igaAutoSize}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaAutoSize: e.target.checked,
+                          igaCalibre: e.target.checked
+                            ? panelAnalysis.recommendedIgaCalibre.toString()
+                            : prev.igaCalibre
+                        }))
+                      }
+                      className="w-4 h-4 accent-primary"
+                    />
+                    Autodimensionar ({panelAnalysis.recommendedIgaCalibre}A)
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Polos Cabecera
+                    </label>
+                    <select
+                      value={panelConfig.igaPoles}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaPoles: e.target.value as '2P' | '4P'
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="2P">2P (Monofásico 230V)</option>
+                      <option value="4P">4P (Trifásico 400V)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Calibre Nominal In (A)
+                    </label>
+                    <select
+                      value={panelAnalysis.effectiveIgaNum.toString()}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaAutoSize: false,
+                          igaCalibre: e.target.value
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      {[25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 400].map((c) => (
+                        <option key={c} value={c}>
+                          {c} A
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Curva Disparo IGA
+                    </label>
+                    <select
+                      value={panelConfig.igaCurve}
+                      onChange={(e) => {
+                        const curve = e.target.value as 'B' | 'C' | 'D' | 'S';
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaCurve: curve,
+                          igaTimeDelayMs:
+                            curve === 'S' && !(prev.igaTimeDelayMs && prev.igaTimeDelayMs > 0)
+                              ? 60
+                              : curve !== 'S'
+                              ? prev.igaTimeDelayMs || 0
+                              : prev.igaTimeDelayMs
+                        }));
+                      }}
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="B">Curva B (3–5 × In)</option>
+                      <option value="C">Curva C (5–10 × In)</option>
+                      <option value="D">Curva D (10–20 × In)</option>
+                      <option value="S">Curva S (Selectivo MCCB)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Poder de Corte (Icu)
+                    </label>
+                    <select
+                      value={panelConfig.igaBreakingCapacity}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaBreakingCapacity: e.target.value as any
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="6kA">6 kA</option>
+                      <option value="10kA">10 kA</option>
+                      <option value="15kA">15 kA</option>
+                      <option value="25kA">25 kA</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 col-span-2">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Retardo Cronométrico Corto Plazo (Δt Selectividad)
+                    </label>
+                    <select
+                      value={(panelConfig.igaTimeDelayMs || 0).toString()}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          igaTimeDelayMs: parseInt(e.target.value, 10) as 0 | 60 | 150
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="0">0 ms — Instantáneo estándar (Modular UNE-EN 60898)</option>
+                      <option value="60">60 ms — Temporizado Selectivo (IEC 60947-2)</option>
+                      <option value="150">150 ms — Selectividad Cronométrica Total</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SPD Card */}
+              <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-primary">
+                      2. Protección Contra Sobretensiones (SPD — ITC-BT-23)
+                    </h4>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Descargador de sobretensiones transitorias y permanentes
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-on-surface cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={panelConfig.spdIncluded}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          spdIncluded: e.target.checked
+                        }))
+                      }
+                      className="w-4 h-4 accent-primary"
+                    />
+                    Incluir SPD
+                  </label>
+                </div>
+
+                <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${!panelConfig.spdIncluded ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className="space-y-1 md:col-span-3">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Tipo de Protector SPD
+                    </label>
+                    <select
+                      value={panelConfig.spdType}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          spdType: e.target.value as any
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold outline-none cursor-pointer"
+                    >
+                      <option value="Combi (Permanentes + Transitorias)">
+                        Combi (Sobretensiones Permanentes + Transitorias Tipo 2)
+                      </option>
+                      <option value="Tipo 2 (Transitorias)">
+                        Tipo 2 (Descargador Transitorias 8/20 μs)
+                      </option>
+                      <option value="Tipo 1+2 (Combinado)">
+                        Tipo 1+2 (Con pararrayos / acometida aérea)
+                      </option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Corriente Imax (8/20)
+                    </label>
+                    <select
+                      value={panelConfig.spdDischargeCurrent}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          spdDischargeCurrent: e.target.value as any
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="15kA">15 kA</option>
+                      <option value="40kA">40 kA</option>
+                      <option value="65kA">65 kA</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="block text-[11px] font-bold uppercase text-on-surface-variant">
+                      Nivel de Protección en Tensión (Up)
+                    </label>
+                    <select
+                      value={panelConfig.spdVoltageLevel}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          spdVoltageLevel: e.target.value as any
+                        }))
+                      }
+                      className="w-full bg-surface-container px-3 py-2.5 rounded-lg text-sm font-bold font-mono outline-none cursor-pointer"
+                    >
+                      <option value="1.2 kV">Up ≤ 1.2 kV (Equipos sensibles)</option>
+                      <option value="1.5 kV">Up ≤ 1.5 kV (Estándar ITC-BT-23)</option>
+                      <option value="2.0 kV">Up ≤ 2.0 kV (Industrial)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Recomendación Automática de Repartidor / Embarrado */}
+            <div
+              className={`p-6 rounded-xl border shadow-sm space-y-4 ${
+                panelAnalysis.recommendDistributor
+                  ? 'bg-primary/5 border-primary/30'
+                  : 'bg-surface-container-lowest border-outline-variant/30'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <Layers size={20} className="text-primary" />
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface">
+                      3. Recomendación de Bloque Repartidor / Embarrado (UNE-EN 61439-1)
+                    </h4>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Evaluación automática por número de líneas en paralelo y conexiones por borne
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {panelAnalysis.recommendDistributor ? (
+                    <span className="px-3 py-1 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-wider">
+                      Repartidor Recomendado
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-bold uppercase">
+                      Opcional (&lt; 4 circuitos)
+                    </span>
+                  )}
+                  <label className="flex items-center gap-2 text-xs font-bold text-on-surface cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={panelConfig.includeDistributorInCAD}
+                      onChange={(e) =>
+                        setPanelConfig((prev) => ({
+                          ...prev,
+                          includeDistributorInCAD: e.target.checked
+                        }))
+                      }
+                      className="w-4 h-4 accent-primary"
+                    />
+                    Incluir en Esquema Unifilar
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-center">
+                <div className="lg:col-span-2 space-y-2 text-xs">
+                  <div className="font-bold text-on-surface">
+                    Elemento prescrito:{' '}
+                    <span className="text-primary font-mono">{panelAnalysis.distributorModel}</span>
+                  </div>
+                  <ul className="space-y-1 text-on-surface-variant list-disc list-inside">
+                    {panelAnalysis.reasons.map((r, idx) => (
+                      <li key={idx}>{r}</li>
+                    ))}
+                    {panelAnalysis.reasons.length === 0 && (
+                      <li>
+                        Número reducido de derivaciones; puede emplearse peine embarrado estándar.
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="bg-surface p-4 rounded-lg border border-outline-variant/30 space-y-2 font-mono text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Calibre barras (In):</span>
+                    <strong className="text-primary">{panelAnalysis.distributorCalibre} A</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Polos:</span>
+                    <strong className="text-on-surface">{panelConfig.igaPoles} (Fases + N)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Salidas mín./barra:</span>
+                    <strong className="text-on-surface">{panelAnalysis.minHolesPerBar} bornes</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Gestión de Grupos Diferenciales (ID1, ID2...) */}
+            <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                <div>
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-primary">
+                    4. Grupos Diferenciales del Cuadro (ITC-BT-24 / ITC-BT-25)
+                  </h4>
+                  <p className="text-[11px] text-on-surface-variant">
+                    Configura los interruptores diferenciales y revisa los circuitos asignados a cada grupo
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddDifferentialGroup}
+                  className="px-3.5 py-2 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer hover:opacity-90 flex items-center gap-1.5"
+                >
+                  <Plus size={15} />
+                  Añadir Diferencial (ID)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {panelConfig.differentialGroups.map((grp) => {
+                  const stats = panelAnalysis.groupCounts[grp.id] || { count: 0, sumIb: 0 };
+                  const assignedCircuits = circuits.filter(
+                    (c) =>
+                      c.grupoId === grp.id ||
+                      (!c.grupoId && grp.id === panelConfig.differentialGroups[0]?.id)
+                  );
+                  const isOver5Circuits = stats.count > 5;
+
+                  return (
+                    <div
+                      key={grp.id}
+                      className="p-4 rounded-xl bg-surface border border-outline-variant/30 space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="px-2.5 py-1 rounded bg-primary text-white font-mono font-black text-xs">
+                            {grp.id}
+                          </span>
+                          <input
+                            type="text"
+                            value={grp.name}
+                            onChange={(e) =>
+                              handleUpdateDifferentialGroup(grp.id, { name: e.target.value })
+                            }
+                            className="bg-surface-container px-2.5 py-1 rounded text-xs font-bold text-on-surface flex-1 outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDifferentialGroup(grp.id)}
+                          className="text-error/70 hover:text-error p-1 cursor-pointer"
+                          title="Eliminar grupo diferencial"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 text-xs font-mono">
+                        <div>
+                          <label className="block text-[10px] font-sans font-bold text-on-surface-variant uppercase">
+                            Polos
+                          </label>
+                          <select
+                            value={grp.poles}
+                            onChange={(e) =>
+                              handleUpdateDifferentialGroup(grp.id, {
+                                poles: e.target.value as '2P' | '4P'
+                              })
+                            }
+                            className="w-full bg-surface-container px-2 py-1.5 rounded font-bold outline-none"
+                          >
+                            <option value="2P">2P</option>
+                            <option value="4P">4P</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-sans font-bold text-on-surface-variant uppercase">
+                            Calibre
+                          </label>
+                          <select
+                            value={grp.calibre}
+                            onChange={(e) =>
+                              handleUpdateDifferentialGroup(grp.id, { calibre: e.target.value })
+                            }
+                            className="w-full bg-surface-container px-2 py-1.5 rounded font-bold outline-none"
+                          >
+                            <option value="25">25 A</option>
+                            <option value="40">40 A</option>
+                            <option value="63">63 A</option>
+                            <option value="80">80 A</option>
+                            <option value="100">100 A</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-sans font-bold text-on-surface-variant uppercase">
+                            Sensib.
+                          </label>
+                          <select
+                            value={grp.sensitivity}
+                            onChange={(e) =>
+                              handleUpdateDifferentialGroup(grp.id, {
+                                sensitivity: e.target.value as any
+                              })
+                            }
+                            className="w-full bg-surface-container px-2 py-1.5 rounded font-bold outline-none"
+                          >
+                            <option value="30mA">30mA</option>
+                            <option value="100mA">100mA</option>
+                            <option value="300mA">300mA</option>
+                            <option value="500mA">500mA</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-sans font-bold text-on-surface-variant uppercase">
+                            Clase
+                          </label>
+                          <select
+                            value={grp.rccbClass}
+                            onChange={(e) =>
+                              handleUpdateDifferentialGroup(grp.id, {
+                                rccbClass: e.target.value as any
+                              })
+                            }
+                            className="w-full bg-surface-container px-2 py-1.5 rounded font-bold outline-none"
+                          >
+                            <option value="AC">Clase AC</option>
+                            <option value="A">Clase A</option>
+                            <option value="A-SI">Clase A-SI</option>
+                            <option value="F">Clase F</option>
+                            <option value="B">Clase B</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-outline-variant/15 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <span className="text-on-surface-variant">
+                          Circuitos asociados: <strong className="text-on-surface">{assignedCircuits.length}</strong>{' '}
+                          (ΣIb = <strong className="font-mono">{stats.sumIb.toFixed(1)} A</strong>)
+                        </span>
+                        {isOver5Circuits && (
+                          <span className="text-amber-600 font-bold">
+                            Aviso ITC-BT-25: &gt; 5 circuitos en un mismo diferencial
+                          </span>
+                        )}
+                      </div>
+
+                      {assignedCircuits.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {assignedCircuits.map((c) => (
+                            <span
+                              key={c.id}
+                              className="px-2 py-0.5 rounded bg-surface-container text-[10px] font-mono font-bold text-on-surface"
+                            >
+                              {c.id.split(' - ')[0]} ({c.in}A · {c.seccion})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 5. Auditoría de Selectividad Amperimétrica y Cronométrica (IGA <-> Circuitos PIA) */}
+            <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                <div>
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-primary flex items-center gap-2">
+                    5. Validación de Selectividad IGA ↔ Circuitos PIA (Amperimétrica y Cronométrica)
+                  </h4>
+                  <p className="text-[11px] text-on-surface-variant">
+                    Comprobación de curvas de disparo entre cabecera (IGA {panelAnalysis.effectiveIgaNum}A Curva {panelConfig.igaCurve}
+                    {(panelConfig.igaTimeDelayMs || 0) > 0 ? ` · Δt=${panelConfig.igaTimeDelayMs}ms` : ' · Instantáneo'}) y las protecciones de cada circuito
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  {panelAnalysis.selectivityFailCount === 0 &&
+                  panelAnalysis.selectivityPartialCount === 0 ? (
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-700">
+                      Selectividad Total Verificada ({circuits.length}/{circuits.length})
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full bg-amber-500/15 text-amber-800 flex items-center gap-1.5">
+                      <AlertTriangle size={14} className="text-amber-600" />
+                      {panelAnalysis.selectivityFailCount} sin selectividad ·{' '}
+                      {panelAnalysis.selectivityPartialCount} parcial / aviso cronométrico
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border border-outline-variant/25">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-surface-container text-[10px] uppercase text-on-surface-variant font-bold">
+                    <tr>
+                      <th className="px-3 py-2.5">Circuito</th>
+                      <th className="px-3 py-2.5">Protección PIA</th>
+                      <th className="px-3 py-2.5">Ratio In (IGA/PIA)</th>
+                      <th className="px-3 py-2.5">Umbral Mag. (IGA vs PIA)</th>
+                      <th className="px-3 py-2.5">Amperimétrica</th>
+                      <th className="px-3 py-2.5">Cronométrica</th>
+                      <th className="px-3 py-2.5">Etiqueta de Aviso / Diagnóstico</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/15 bg-surface">
+                    {circuits.map((circ) => {
+                      const sel = panelAnalysis.circuitSelectivityMap[circ.id];
+                      if (!sel) return null;
+                      return (
+                        <tr key={circ.id} className="hover:bg-surface-container/30">
+                          <td className="px-3 py-2.5 font-sans font-bold text-on-surface">
+                            {circ.id}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {circ.in}A · Curva {circ.curva || 'C'}
+                          </td>
+                          <td
+                            className={`px-3 py-2.5 font-bold ${
+                              sel.ratioIn >= 1.6 ? 'text-emerald-600' : 'text-error'
+                            }`}
+                          >
+                            {sel.ratioIn}× {sel.ratioIn >= 1.6 ? '(≥1.6)' : '(<1.6)'}
+                          </td>
+                          <td className="px-3 py-2.5 text-on-surface-variant">
+                            {sel.iMagMinIga} A vs {sel.iMagMaxPia} A
+                          </td>
+                          <td className="px-3 py-2.5 font-sans font-bold">
+                            {sel.amperimetricOk ? (
+                              <span className="text-emerald-600">CUMPLE</span>
+                            ) : (
+                              <span className="text-error">NO CUMPLE</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-sans font-bold">
+                            {sel.chronometricOk ? (
+                              <span className="text-emerald-600">CUMPLE</span>
+                            ) : (
+                              <span className="text-amber-600">NO CUMPLE</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-sans">
+                            <div className="flex flex-col gap-0.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-[10px] w-fit ${
+                                  sel.status === 'total'
+                                    ? 'bg-emerald-500/15 text-emerald-700'
+                                    : sel.status === 'partial'
+                                    ? 'bg-amber-500/15 text-amber-800'
+                                    : 'bg-error/15 text-error'
+                                }`}
+                              >
+                                {sel.status !== 'total' && <AlertTriangle size={11} />}
+                                {sel.badgeText}
+                              </span>
+                              {!sel.isFullyCompliant && (
+                                <span className="text-[11px] text-on-surface-variant">
+                                  {sel.shortReason}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         );
     }
   };
 
-  const tabs: {id: 'condiciones' | 'receptor' | 'seccion' | 'tabla', label: string}[] = [
-    { id: 'condiciones', label: 'Condiciones' },
-    { id: 'receptor', label: 'Receptor' },
-    { id: 'seccion', label: 'Sección cable' },
-    { id: 'tabla', label: 'Tabla' },
+  const tabs: {
+    id: 'condiciones' | 'receptor' | 'seccion' | 'tabla' | 'cuadro';
+    label: string;
+  }[] = [
+    { id: 'condiciones', label: '1. Condiciones' },
+    { id: 'receptor', label: '2. Receptor' },
+    { id: 'seccion', label: '3. Sección Cable' },
+    { id: 'tabla', label: '4. Tabla UNE' },
+    { id: 'cuadro', label: `5. Cuadro y Protecciones (${panelConfig.differentialGroups.length} ID)` }
   ];
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-6 md:py-8 lg:px-8 pb-32">
-      {/* Header section similar to the original image header */}
-      <div className="flex flex-col mb-8 gap-1 pl-4 border-l-[6px] border-primary rounded-[2px]">
-        <h2 className="font-headline text-3xl font-extrabold text-on-surface -tracking-[0.02em]">Project - 1</h2>
-        <p className="text-on-surface-variant text-sm font-medium tracking-wide">Circuito de baja tensión  /  <span className="text-primary font-bold">Circuito BT</span></p>
-      </div>
-      
-      {/* Main Form Container */}
-      <div className="bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/30 overflow-hidden flex flex-col min-h-[600px] xl:w-[94%] mx-auto">
-        {/* Tabs Desktop view */}
-        <div className="flex border-b border-outline-variant/20 overflow-x-auto scrollbar-hide bg-surface-container-lowest">
-           {tabs.map((tab) => (
-             <button
-               key={tab.id}
-               onClick={() => setActiveTab(tab.id)}
-               className={`py-4 px-8 text-[0.8rem] font-bold uppercase tracking-wider transition-all whitespace-nowrap border-b-2 relative ${
-                 activeTab === tab.id 
-                   ? 'text-primary border-primary bg-primary/5' 
-                   : 'text-on-surface-variant border-transparent hover:bg-surface-container hover:text-on-surface'
-               }`}
-             >
-               {tab.label}
-             </button>
-           ))}
-        </div>
-        
-        {/* Active Tab Content */}
-        <div className="p-6 md:p-10 flex-1 bg-surface-container-lowest">
-           {renderTabContent()}
+      {/* Header section */}
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-4 pl-4 border-l-[6px] border-primary rounded-[2px]">
+        <div>
+          <h2 className="font-headline text-2xl md:text-3xl font-extrabold text-on-surface -tracking-[0.02em]">
+            Líneas BT y Cuadro de Distribución
+          </h2>
+          <p className="text-on-surface-variant text-sm font-medium tracking-wide">
+            Cálculo normativo UNE-HD 60364-5-52 /{' '}
+            <span className="text-primary font-bold">
+              Condiciones · Receptor · Sección · Tabla · Cabecera y Diferenciales
+            </span>
+          </p>
         </div>
 
+        <button
+          type="button"
+          onClick={() => onTransferToCAD(panelConfig)}
+          className="bg-primary hover:bg-primary-container text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+        >
+          <GitBranch size={16} />
+          Pasar Cuadro al Esquema Unifilar ({circuits.length})
+        </button>
+      </div>
+
+      {/* Main Form Container */}
+      <div className="bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/30 overflow-hidden flex flex-col min-h-[560px] xl:w-[96%] mx-auto">
+        {/* Tabs Navigation */}
+        <div className="flex border-b border-outline-variant/20 overflow-x-auto scrollbar-hide bg-surface-container-lowest">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-4 px-6 text-[0.78rem] font-bold uppercase tracking-wider transition-all whitespace-nowrap border-b-2 relative cursor-pointer ${
+                activeTab === tab.id
+                  ? 'text-primary border-primary bg-primary/5'
+                  : 'text-on-surface-variant border-transparent hover:bg-surface-container hover:text-on-surface'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Active Tab Content */}
+        <div className="p-6 md:p-8 flex-1 bg-surface-container-lowest">{renderTabContent()}</div>
+
         {/* Global Summary Bar at Bottom */}
-        <div className="bg-surface-container-lowest px-6 py-4 border-t border-b border-outline-variant/20 flex flex-wrap gap-4 items-center justify-between">
-           <div className="flex items-center gap-6 text-sm font-mono overflow-x-auto w-full pb-2">
-             <span className="bg-surface px-4 py-1.5 rounded-lg border border-outline-variant/30 font-bold whitespace-nowrap text-on-surface-variant shadow-sm uppercase tracking-widest text-[#000] text-xs">Resumen</span>
-             {tableRows.find(r => r.pass)?.s ? (
-                <>
-                   <span className="whitespace-nowrap text-on-surface opacity-90 font-mono text-[11px]"><strong className="font-sans font-semibold text-on-surface-variant mr-1">Sección:</strong> {tableRows.find(r => r.pass)?.s} mm²</span>
-                   <span className="whitespace-nowrap text-on-surface opacity-90 font-mono text-[11px]"><strong className="font-sans font-semibold text-on-surface-variant mr-1">Ib:</strong> {ib.toFixed(2)} A</span>
-                   <span className="whitespace-nowrap text-on-surface opacity-90 font-mono text-[11px]"><strong className="font-sans font-semibold text-on-surface-variant mr-1">Iz':</strong> {tableRows.find(r => r.pass)?.iz} A</span>
-                   <span className="whitespace-nowrap text-on-surface opacity-90 font-mono text-[11px]"><strong className="font-sans font-semibold text-on-surface-variant mr-1">ΔU:</strong> {tableRows.find(r => r.pass)?.caida} %</span>
-                </>
-             ) : (
-                <span className="text-error font-sans font-semibold text-xs">Ninguna sección cumple</span>
-             )}
-           </div>
+        <div className="bg-surface-container-lowest px-6 py-3.5 border-t border-b border-outline-variant/20 flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex items-center gap-5 text-sm font-mono overflow-x-auto w-full">
+            <span className="bg-surface px-3.5 py-1 rounded-lg border border-outline-variant/30 font-bold whitespace-nowrap text-on-surface shadow-sm uppercase tracking-widest text-xs">
+              Resumen Línea Activa
+            </span>
+            {activeRow ? (
+              <>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    Sección:
+                  </strong>
+                  <strong className="text-primary">{activeRow.s} mm²</strong>{' '}
+                  {selectedManualSection ? '(Manual)' : '(Auto)'}
+                </span>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    Ib:
+                  </strong>
+                  {ib.toFixed(2)} A
+                </span>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    In:
+                  </strong>
+                  {effectiveIn} A ({curvaProteccion})
+                </span>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    Iz':
+                  </strong>
+                  {activeRow.iz} A
+                </span>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    ΔU:
+                  </strong>
+                  <span className={activeRow.okVoltageDrop ? 'text-emerald-600 font-bold' : 'text-error font-bold'}>
+                    {activeRow.caida} %
+                  </span>
+                </span>
+                <span className="whitespace-nowrap text-on-surface font-mono text-xs">
+                  <strong className="font-sans font-semibold text-on-surface-variant mr-1">
+                    Diferencial:
+                  </strong>
+                  <span className="text-primary font-bold">{grupoId}</span>
+                </span>
+                <span
+                  className={`whitespace-nowrap px-2.5 py-0.5 rounded font-sans font-bold text-[11px] flex items-center gap-1 ${
+                    activeSelectivity.status === 'total'
+                      ? 'bg-emerald-500/15 text-emerald-700'
+                      : activeSelectivity.status === 'partial'
+                      ? 'bg-amber-500/15 text-amber-800'
+                      : 'bg-error/15 text-error'
+                  }`}
+                  title={activeSelectivity.shortReason}
+                >
+                  {activeSelectivity.status !== 'total' && <AlertTriangle size={12} />}
+                  {activeSelectivity.badgeText}
+                </span>
+              </>
+            ) : (
+              <span className="text-error font-sans font-semibold text-xs">
+                Ninguna sección cumple las condiciones
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Action Buttons Row */}
-        <div className="bg-surface-container-lowest p-6 flex flex-wrap gap-3 items-center justify-between border-t border-outline-variant/15">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex bg-surface-container border border-outline-variant/30 rounded-lg overflow-hidden shrink-0 shadow-inner focus-within:ring-2 focus-within:ring-primary/20 transition-all">
-                 <span className="px-4 py-2 border-r border-outline-variant/30 text-xs font-bold text-on-surface-variant bg-surface-container-low min-w-[70px] text-center">ID Línea</span>
-                 <input 
-                   type="text" 
-                   className="px-3.5 py-2 bg-transparent text-xs font-bold text-on-surface outline-none w-44 focus:bg-primary/5 transition-colors" 
-                   value={circuitoId}
-                   onChange={(e) => setCircuitoId(e.target.value)}
-                   placeholder="Ej: C1 - Alumbrado"
-                 />
-              </div>
-              
-              <button 
-                onClick={handleClear}
-                className="bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-sm active:scale-[0.98] cursor-pointer"
-                title="Limpiar campos para una nueva línea"
-              >
-                Limpiar
-              </button>
-              <button 
-                onClick={handleSave}
-                className="bg-primary hover:bg-primary-container text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
-              >
-                <Save size={15} />
-                Guardar Línea
-              </button>
+        <div className="bg-surface-container-lowest p-5 flex flex-wrap gap-3 items-center justify-between border-t border-outline-variant/15">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex bg-surface-container border border-outline-variant/30 rounded-lg overflow-hidden shrink-0 shadow-inner focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+              <span className="px-3.5 py-2 border-r border-outline-variant/30 text-xs font-bold text-on-surface-variant bg-surface-container-low min-w-[70px] text-center">
+                ID Línea
+              </span>
+              <input
+                type="text"
+                className="px-3.5 py-2 bg-transparent text-xs font-bold text-on-surface outline-none w-52 focus:bg-primary/5 transition-colors"
+                value={circuitoId}
+                onChange={(e) => setCircuitoId(e.target.value)}
+                placeholder="Ej: C1 - Alumbrado General"
+              />
             </div>
 
-            <div className="flex items-center gap-2.5 ml-auto">
-              <button
-                onClick={onOpenExport}
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
-                title="Generar Memoria Técnica oficial completa en PDF con unifilar y tabla"
-              >
-                <FileText size={15} />
-                Exportar Memoria MTD
-              </button>
-              <a 
-                href="https://www.boe.es/buscar/act.php?id=BOE-A-2002-18099" 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="bg-surface-container hover:bg-surface-container-high text-primary p-2.5 rounded-lg transition-colors shadow-sm cursor-pointer border border-outline-variant/30 flex items-center justify-center"
-                title="Consultar BOE oficial de Baja Tensión"
-              >
-                 <BookOpen size={16}/>
-              </a>
-            </div>
+            <button
+              onClick={handleClear}
+              className="bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-sm active:scale-[0.98] cursor-pointer"
+              title="Limpiar campos para una nueva línea"
+            >
+              Limpiar
+            </button>
+            <button
+              onClick={handleSave}
+              className="bg-primary hover:bg-primary-container text-white font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
+            >
+              <Save size={15} />
+              Guardar Circuito en Cuadro
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2.5 ml-auto flex-wrap">
+            <button
+              onClick={() => onTransferToCAD(panelConfig)}
+              className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
+              title="Generar Esquema Unifilar CAD con Cabecera IGA, SPD, Repartidor, Diferenciales y estos Circuitos"
+            >
+              <GitBranch size={15} />
+              Pasar a Unifilar CAD
+            </button>
+            <button
+              onClick={onOpenExport}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-2"
+              title="Generar Memoria Técnica oficial completa en PDF con unifilar y tabla"
+            >
+              <FileText size={15} />
+              Exportar Memoria MTD
+            </button>
+          </div>
         </div>
-
       </div>
 
-      {/* Table List at Bottom */}
-      <div className="mt-8 bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/20 overflow-hidden xl:w-[94%] mx-auto pb-6">
+      {/* Saved Circuits Table at Bottom */}
+      <div className="mt-8 bg-surface rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-outline-variant/20 overflow-hidden xl:w-[96%] mx-auto pb-6">
         <div className="p-4 md:p-6 border-b border-outline-variant/20 bg-surface flex justify-between items-center flex-wrap gap-4">
-           <div className="flex items-center gap-4 flex-wrap text-sm">
-              <div className="relative">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-                <input 
-                  type="text" 
-                  placeholder="Buscar por ID, sección, método..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 pr-4 py-2 border border-outline-variant/30 rounded-lg bg-surface-container-lowest text-xs outline-none focus:border-primary shadow-sm w-72 focus:ring-2 focus:ring-primary/20 transition-all font-medium text-on-surface" 
-                />
-              </div>
+          <div className="flex items-center gap-4 flex-wrap text-sm">
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant"
+              />
+              <input
+                type="text"
+                placeholder="Buscar por circuito, grupo ID, sección, método..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 pr-4 py-2 border border-outline-variant/30 rounded-lg bg-surface-container-lowest text-xs outline-none focus:border-primary shadow-sm w-72 focus:ring-2 focus:ring-primary/20 transition-all font-medium text-on-surface"
+              />
+            </div>
 
-              <button 
-                onClick={onOpenExport}
-                className="px-3.5 py-1.5 bg-surface-container hover:bg-surface-container-high text-xs font-bold text-primary rounded-lg border border-outline-variant/30 flex items-center gap-1.5 shadow-sm transition-all"
-              >
-                <Download size={14} />
-                Exportar Todo ({circuits.length})
-              </button>
-           </div>
-           
-           <div className="text-xs text-on-surface-variant text-right font-medium">
-             <span className="font-bold text-on-surface">
-               {circuits.filter(c => {
-                 if (!searchTerm) return true;
-                 const q = searchTerm.toLowerCase();
-                 return c.id.toLowerCase().includes(q) || c.metodo.toLowerCase().includes(q) || c.seccion.toLowerCase().includes(q);
-               }).length}
-             </span> de <span className="font-bold text-on-surface">{circuits.length}</span> líneas guardadas en este proyecto
-           </div>
+            <button
+              onClick={() => onTransferToCAD(panelConfig)}
+              className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-xs font-bold text-primary rounded-lg border border-primary/30 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            >
+              <GitBranch size={14} />
+              Sincronizar Unifilar CAD ({circuits.length})
+            </button>
+
+            <button
+              onClick={onOpenExport}
+              className="px-3.5 py-1.5 bg-surface-container hover:bg-surface-container-high text-xs font-bold text-on-surface rounded-lg border border-outline-variant/30 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            >
+              <Download size={14} />
+              Exportar Todo ({circuits.length})
+            </button>
+          </div>
+
+          <div className="text-xs text-on-surface-variant text-right font-medium">
+            Cabecera: <strong className="text-on-surface">IGA {panelConfig.igaPoles} {panelAnalysis.effectiveIgaNum}A</strong> ·{' '}
+            {panelConfig.spdIncluded ? <strong className="text-emerald-600">SPD Activo</strong> : 'Sin SPD'} ·{' '}
+            <strong className="text-primary">{circuits.length}</strong> líneas en cuadro
+          </div>
         </div>
 
         <div className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-sm text-center font-mono whitespace-nowrap min-w-[1200px]">
+          <table className="w-full text-sm text-center font-mono whitespace-nowrap min-w-[1250px]">
             <thead className="bg-[#fcfdfd] text-[0.65rem] border-b border-outline-variant/20 text-on-surface-variant uppercase tracking-wider font-extrabold pb-4 shadow-sm">
               <tr>
-                <th className="py-4 px-4 align-middle">Cargar</th>
-                <th className="py-4 px-4 text-left align-middle text-[#000]">Circuito</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Método</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Conductores</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Tensión</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Aisl.</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Sección <span className="lowercase font-sans font-medium text-on-surface-variant">(mm²)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">N°</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Carga</th>
-                <th className="py-4 px-4 align-middle font-sans font-bold text-on-surface-variant lowercase">ud.</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Fu</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Fs</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Ib <span className="lowercase font-sans font-medium text-on-surface-variant">(A)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">In <span className="lowercase font-sans font-medium text-on-surface-variant">(A)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">x In</th>
-                <th className="py-4 px-4 align-middle text-[#000]">Ir <span className="lowercase font-sans font-medium text-on-surface-variant">(A)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">Iz' <span className="lowercase font-sans font-medium text-on-surface-variant">(A)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">L <span className="lowercase font-sans font-medium text-on-surface-variant">(m)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">ΔU <span className="lowercase font-sans font-medium text-on-surface-variant">(%)</span></th>
-                <th className="py-4 px-4 align-middle text-[#000]">Borrar</th>
+                <th className="py-4 px-3 align-middle">Cargar</th>
+                <th className="py-4 px-3 text-left align-middle text-[#000]">Circuito</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Grupo ID</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Método</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Conductores</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Tensión</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Aisl.</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Sección (mm²)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">N°</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Carga (kW)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Ib (A)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">PIA In (A)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Selectividad IGA</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Iz' (A)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">L (m)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">ΔU (%)</th>
+                <th className="py-4 px-3 align-middle text-[#000]">Borrar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/10 text-on-surface bg-surface-container-lowest text-[13px] font-medium">
               {circuits
-                .filter(c => {
+                .filter((c) => {
                   if (!searchTerm) return true;
                   const q = searchTerm.toLowerCase();
-                  return c.id.toLowerCase().includes(q) || 
-                         c.metodo.toLowerCase().includes(q) || 
-                         c.seccion.toLowerCase().includes(q) ||
-                         c.conductores.toLowerCase().includes(q);
+                  return (
+                    c.id.toLowerCase().includes(q) ||
+                    c.metodo.toLowerCase().includes(q) ||
+                    c.seccion.toLowerCase().includes(q) ||
+                    (c.grupoId || '').toLowerCase().includes(q) ||
+                    c.conductores.toLowerCase().includes(q)
+                  );
                 })
                 .map((circ) => {
                   const deltaNum = parseFloat(circ.deltaU.replace(',', '.')) || 0;
                   const isOk = deltaNum <= 5;
+                  const sel = panelAnalysis.circuitSelectivityMap[circ.id];
                   return (
                     <tr key={circ.id} className="hover:bg-surface-container/40 transition-colors group">
-                      <td className="py-3 px-4">
-                        <button 
+                      <td className="py-3 px-3">
+                        <button
                           onClick={() => handleOpenRecord(circ)}
                           className="text-[#4e6df5] hover:text-[#3d5ce4] p-1.5 rounded active:scale-95 transition-transform cursor-pointer"
                           title="Cargar esta línea en el formulario para editar o recalcular"
@@ -2910,30 +5007,72 @@ function AdvancedCircuitScreen({
                           <FolderOpen size={18} />
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-left font-sans font-bold text-on-surface/90">
+                      <td className="py-3 px-3 text-left font-sans font-bold text-on-surface/90">
                         {circ.id}
                       </td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.metodo}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.conductores}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.tension}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.aisl}</td>
-                      <td className="py-3 px-4 font-bold text-primary">{circ.seccion}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.n}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.carga}</td>
-                      <td className="py-3 px-4 font-sans text-xs text-on-surface-variant/70">{circ.ud}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.fu}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.fs}</td>
-                      <td className="py-3 px-4 text-on-surface">{circ.ib}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.in}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.xin}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.ir}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.iz}</td>
-                      <td className="py-3 px-4 text-on-surface-variant">{circ.l}</td>
-                      <td className={`py-3 px-4 font-bold ${isOk ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {circ.deltaU}
+                      <td className="py-3 px-3">
+                        <select
+                          value={circ.grupoId || panelConfig.differentialGroups[0]?.id || 'ID1'}
+                          onChange={(e) => {
+                            const newGid = e.target.value;
+                            setCircuits((prev) =>
+                              prev.map((item) =>
+                                item.id === circ.id ? { ...item, grupoId: newGid } : item
+                              )
+                            );
+                            onShowToast(`Circuito "${circ.id}" asignado a ${newGid}`);
+                          }}
+                          className="px-2 py-1 rounded bg-primary/10 text-primary font-bold text-xs outline-none cursor-pointer"
+                        >
+                          {panelConfig.differentialGroups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.id}
+                            </option>
+                          ))}
+                          <option value="DIRECT">DIRECTO</option>
+                        </select>
                       </td>
-                      <td className="py-3 px-4">
-                        <button 
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.metodo}</td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.conductores}</td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.tension} V</td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.aisl}</td>
+                      <td className="py-3 px-3 font-bold text-primary">{circ.seccion}</td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.n}</td>
+                      <td className="py-3 px-3 text-on-surface-variant">
+                        {circ.carga} {circ.ud}
+                      </td>
+                      <td className="py-3 px-3 text-on-surface">{circ.ib}</td>
+                      <td className="py-3 px-3 font-bold text-on-surface">
+                        {circ.in}A ({circ.curva || 'C'})
+                      </td>
+                      <td className="py-3 px-3 font-sans">
+                        {sel && (
+                          <span
+                            title={`${sel.shortReason} — ${sel.recommendation}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold cursor-help ${
+                              sel.status === 'total'
+                                ? 'bg-emerald-500/15 text-emerald-700'
+                                : sel.status === 'partial'
+                                ? 'bg-amber-500/15 text-amber-800'
+                                : 'bg-error/15 text-error'
+                            }`}
+                          >
+                            {sel.status !== 'total' && <AlertTriangle size={11} />}
+                            {sel.badgeText}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.iz}</td>
+                      <td className="py-3 px-3 text-on-surface-variant">{circ.l}</td>
+                      <td
+                        className={`py-3 px-3 font-bold ${
+                          isOk ? 'text-emerald-600' : 'text-red-500'
+                        }`}
+                      >
+                        {circ.deltaU}%
+                      </td>
+                      <td className="py-3 px-3">
+                        <button
                           onClick={() => handleDeleteRecord(circ.id)}
                           className="text-error/60 hover:text-error transition-colors p-1.5 rounded active:scale-95 cursor-pointer"
                           title="Eliminar este circuito"
